@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ScheduleCalendar } from "@/components/schedule-calendar";
 import { SHOW_TIME_LABELS } from "@/lib/constants";
 import type { ShowTime } from "@/lib/constants";
@@ -43,6 +43,7 @@ export function UnavailableCalendar({ actorId, initialPerformanceDateIds }: Unav
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [dialogDate, setDialogDate] = useState<string | null>(null);
+  const dialogCloseRef = useRef(0);
 
   const fetchData = useCallback(async (y: number, m: number) => {
     setLoading(true);
@@ -81,6 +82,7 @@ export function UnavailableCalendar({ actorId, initialPerformanceDateIds }: Unav
   };
 
   const handleCellClick = (dateStr: string) => {
+    if (Date.now() - dialogCloseRef.current < 300) return;
     if (!data?.performances[dateStr]) return;
     setDialogDate(dateStr);
   };
@@ -224,7 +226,12 @@ export function UnavailableCalendar({ actorId, initialPerformanceDateIds }: Unav
       </div>
 
       {/* 회차 선택 Dialog */}
-      <Dialog open={!!dialogDate} onOpenChange={(open) => !open && setDialogDate(null)}>
+      <Dialog open={!!dialogDate} onOpenChange={(open) => {
+        if (!open) {
+          dialogCloseRef.current = Date.now();
+          setDialogDate(null);
+        }
+      }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{dialogDate} 불가 회차 선택</DialogTitle>

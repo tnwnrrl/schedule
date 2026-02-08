@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ScheduleCalendar } from "@/components/schedule-calendar";
 import { SHOW_TIMES, SHOW_TIME_LABELS } from "@/lib/constants";
 import { ROLE_TYPE_LABEL } from "@/types";
@@ -51,6 +51,7 @@ export function CastingCalendar() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dialogCastings, setDialogCastings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const dialogCloseRef = useRef(0);
 
   const fetchData = useCallback(async (y: number, m: number) => {
     setLoading(true);
@@ -80,6 +81,7 @@ export function CastingCalendar() {
   };
 
   const handleCellClick = (dateStr: string) => {
+    if (Date.now() - dialogCloseRef.current < 300) return;
     if (!data?.performances[dateStr]) return;
     setSelectedDate(dateStr);
 
@@ -227,7 +229,12 @@ export function CastingCalendar() {
       />
 
       {/* 배역 배정 Dialog */}
-      <Dialog open={!!selectedDate} onOpenChange={(open) => !open && setSelectedDate(null)}>
+      <Dialog open={!!selectedDate} onOpenChange={(open) => {
+        if (!open) {
+          dialogCloseRef.current = Date.now();
+          setSelectedDate(null);
+        }
+      }}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedDate} 배역 배정</DialogTitle>
