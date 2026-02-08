@@ -10,6 +10,7 @@ const adminEmails = (process.env.ADMIN_EMAILS ?? "")
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  session: { strategy: "jwt" },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
@@ -20,16 +21,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       if (!user.email) return false;
 
-      // 기존 사용자 확인
       const existingUser = await prisma.user.findUnique({
         where: { email: user.email },
       });
 
-      // 새 사용자: admin 이메일이면 ADMIN, 아니면 ACTOR
       if (!existingUser) {
         const role = adminEmails.includes(user.email) ? "ADMIN" : "ACTOR";
-        // PrismaAdapter가 유저 생성 후 이 콜백이 호출되므로,
-        // 생성 직후 role을 업데이트
         setTimeout(async () => {
           try {
             await prisma.user.update({
@@ -44,15 +41,28 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       return true;
     },
-    async session({ session, user }) {
-      if (session.user) {
+    async jwt({ token, user, trigger }) {
+      if (user) {
+        token.id = user.id;
+      }
+      // 로그인 시 또는 세션 업데이트 시 DB에서 최신 정보 가져오기
+      if (trigger === "signIn" || trigger === "update" || !token.role) {
         const dbUser = await prisma.user.findUnique({
-          where: { id: user.id },
-          include: { actor: true },
+          where: { id: token.id as string },
+          select: { role: true, actorId: true },
         });
-        session.user.id = user.id;
-        session.user.role = (dbUser?.role as "ADMIN" | "ACTOR") ?? "ACTOR";
-        session.user.actorId = dbUser?.actorId ?? null;
+        if (dbUser) {
+          token.role = dbUser.role;
+          token.actorId = dbUser.actorId;
+        }
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.id = token.id as string;
+        session.user.role = (token.role as "ADMIN" | "ACTOR") ?? "ACTOR";
+        session.user.actorId = (token.actorId as string) ?? null;
       }
       return session;
     },

@@ -1,17 +1,10 @@
-import { auth, signIn } from "@/lib/auth";
-import { redirect } from "next/navigation";
+import { signIn } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function LoginPage() {
-  const session = await auth();
-
-  if (session?.user) {
-    if (session.user.role === "ADMIN") {
-      redirect("/admin");
-    }
-    redirect("/actor");
-  }
+  // auth check is handled by middleware (getToken)
+  // to avoid auth()/getToken() inconsistency causing redirect loops
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50">
