@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Auth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// App models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("ACTOR")
+  actorId       String?   @unique
+  actor         Actor?    @relation(fields: [actorId], references: [id])
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model Actor {
+  id               String            @id @default(cuid())
+  name             String
+  roleType         String
+  calendarId       String?
+  user             User?
+  unavailableDates UnavailableDate[]
+  castings         Casting[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model PerformanceDate {
+  id        String    @id @default(cuid())
+  date      DateTime
+  startTime String
+  endTime   String?
+  label     String?
+  castings  Casting[]
+  createdAt DateTime  @default(now())
+
+  @@unique([date, startTime])
+}
+
+model UnavailableDate {
+  id              String   @id @default(cuid())
+  actorId         String
+  date            DateTime
+  synced          Boolean  @default(false)
+  calendarEventId String?
+  actor           Actor    @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@unique([actorId, date])
+}
+
+model Casting {
+  id                String          @id @default(cuid())
+  performanceDateId String
+  actorId           String
+  roleType          String
+  synced            Boolean         @default(false)
+  calendarEventId   String?
+  performanceDate   PerformanceDate @relation(fields: [performanceDateId], references: [id], onDelete: Cascade)
+  actor             Actor           @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([performanceDateId, roleType])
+}
