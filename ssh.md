@@ -9,7 +9,7 @@ ssh -p 55 tnwnrrl@192.168.219.187
 ## 배포 (자동)
 ```bash
 expect -c '
-set timeout 300
+set timeout 600
 spawn sshpass -p "Aksksla12!" ssh -p 55 -tt tnwnrrl@192.168.219.187 "sudo env PATH=/volume2/@appstore/Docker/usr/bin:/usr/local/bin:/usr/bin:\$PATH /volume2/@appstore/Docker/usr/bin/docker-compose -f \"/volume1/Synology Driver/일산 신규 프로젝트/장치/schedule/docker-compose.yml\" up -d --build 2>&1"
 expect {
     "Password:" { send "Aksksla12!\r"; exp_continue }
@@ -32,9 +32,9 @@ sudo docker-compose down && sudo docker-compose up -d --build
 sudo docker logs schedule --tail 50
 ```
 
-## 시드 데이터 (최초 1회)
+## data 디렉토리 권한 (최초 1회)
 ```bash
-sudo docker exec schedule npx prisma db seed
+sudo chmod 777 "/volume1/Synology Driver/일산 신규 프로젝트/장치/schedule/data"
 ```
 
 ## 접속 URL
