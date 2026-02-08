@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  schedule:
+    build: .
+    container_name: schedule
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
+    environment:
+      - TZ=Asia/Seoul
+      - DATABASE_URL=file:/app/data/schedule.db
+      - NEXTAUTH_URL=http://192.168.219.187:3100
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
+      - GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY}
+      - CALENDAR_MALE_LEAD=${CALENDAR_MALE_LEAD}
+      - CALENDAR_FEMALE_LEAD=${CALENDAR_FEMALE_LEAD}
+      - ADMIN_EMAILS=${ADMIN_EMAILS}
+    volumes:
+      - ./data:/app/data

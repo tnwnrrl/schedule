@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.env
+.env.local
+*.db
+*.db-journal
+data/
+ssh.md
+CLAUDE.md
