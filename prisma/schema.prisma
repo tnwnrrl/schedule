@@ -79,6 +79,7 @@ model PerformanceDate {
   createdAt        DateTime          @default(now())
 
   @@unique([date, startTime])
+  @@index([date])
 }
 
 model UnavailableDate {
@@ -92,6 +93,7 @@ model UnavailableDate {
   createdAt         DateTime        @default(now())
 
   @@unique([actorId, performanceDateId])
+  @@index([performanceDateId])
 }
 
 model Casting {
@@ -107,4 +109,6 @@ model Casting {
   updatedAt         DateTime        @updatedAt
 
   @@unique([performanceDateId, roleType])
+  @@index([performanceDateId])
+  @@index([actorId])
 }

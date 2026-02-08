@@ -3,23 +3,30 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SHOW_TIMES } from "@/lib/constants";
 
-async function ensureMonthPerformances(year: number, month: number) {
+// 해당 월 PerformanceDate 보장 + 반환 (중복 조회 제거)
+async function ensureAndGetMonthPerformances(year: number, month: number) {
   const startDate = new Date(Date.UTC(year, month - 1, 1));
   const endDate = new Date(Date.UTC(year, month, 1));
 
-  // 이미 존재하는 레코드 확인
   const existing = await prisma.performanceDate.findMany({
     where: { date: { gte: startDate, lt: endDate } },
-    select: { date: true, startTime: true },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
 
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const expectedCount = daysInMonth * SHOW_TIMES.length;
+
+  // 이미 모두 존재하면 바로 반환 (가장 흔한 케이스 → DB 왕복 1회로 끝)
+  if (existing.length >= expectedCount) {
+    return existing;
+  }
+
+  // 부족한 레코드만 생성
   const existingSet = new Set(
     existing.map((e) => `${e.date.toISOString().split("T")[0]}_${e.startTime}`)
   );
 
-  const daysInMonth = new Date(year, month, 0).getDate();
   const toCreate: Array<{ date: Date; startTime: string }> = [];
-
   for (let day = 1; day <= daysInMonth; day++) {
     const utcDate = new Date(Date.UTC(year, month - 1, day));
     const dateStr = utcDate.toISOString().split("T")[0];
@@ -31,13 +38,20 @@ async function ensureMonthPerformances(year: number, month: number) {
   }
 
   if (toCreate.length > 0) {
-    // 개별 생성 (SQLite는 createMany skipDuplicates 미지원)
     await prisma.$transaction(
       toCreate.map((d) =>
         prisma.performanceDate.create({ data: d })
       )
     );
+
+    // 생성 후 전체 다시 조회 (정렬 보장)
+    return prisma.performanceDate.findMany({
+      where: { date: { gte: startDate, lt: endDate } },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    });
   }
+
+  return existing;
 }
 
 // GET /api/schedule?year=2026&month=2
@@ -55,19 +69,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid year or month" }, { status: 400 });
   }
 
-  // 해당 월의 PerformanceDate 보장 (없으면 자동 생성)
-  await ensureMonthPerformances(year, month);
-
-  // 해당 월 범위
-  const startDate = new Date(Date.UTC(year, month - 1, 1));
-  const endDate = new Date(Date.UTC(year, month, 1));
-
-  // 병렬 조회
+  // perfDates 보장 + 조회를 한 번에 (중복 SELECT 제거)
   const [perfDates, actors] = await Promise.all([
-    prisma.performanceDate.findMany({
-      where: { date: { gte: startDate, lt: endDate } },
-      orderBy: [{ date: "asc" }, { startTime: "asc" }],
-    }),
+    ensureAndGetMonthPerformances(year, month),
     prisma.actor.findMany({
       orderBy: [{ roleType: "asc" }, { name: "asc" }],
       select: { id: true, name: true, roleType: true },
@@ -86,7 +90,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Casting + UnavailableDate 조회 (perfDateIds 필요)
+  // Casting + UnavailableDate 병렬 조회
   const perfDateIds = perfDates.map((p) => p.id);
   const [castingRows, unavailableRows] = await Promise.all([
     prisma.casting.findMany({
