@@ -28,5 +28,10 @@ npm run db:studio    # Prisma Studio
 - **UnavailableDate**: 배우 불가일정
 - **Casting**: 배역 배정 (@@unique: performanceDateId + roleType)
 
+## 배포 & 테스트 규칙
+- **테스트는 반드시 프로덕션 서버에서 수행**: 로컬 `npm run dev` 대신, 코드 변경 후 커밋 → push → Vercel 자동 배포 후 프로덕션 URL에서 테스트
+- **배포 흐름**: `git push origin main` → Vercel 자동 빌드/배포 → 프로덕션 확인
+- **DB 마이그레이션**: 스키마 변경 시 Turso 프로덕션 DB에도 `@libsql/client`로 직접 DDL 실행
+
 ## 환경변수
 `.env.example` 참조. `.env.local`에 실제 값 설정.
