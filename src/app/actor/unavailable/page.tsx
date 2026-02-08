@@ -24,7 +24,6 @@ export default async function UnavailablePage() {
 
   const unavailableDates = await prisma.unavailableDate.findMany({
     where: { actorId },
-    orderBy: { date: "asc" },
   });
 
   return (
@@ -32,14 +31,12 @@ export default async function UnavailablePage() {
       <div>
         <h1 className="text-2xl font-bold">불가일정 등록</h1>
         <p className="text-gray-600">
-          {actor?.name} - 달력에서 날짜를 클릭하여 불가일정을 등록하세요
+          {actor?.name} - 달력에서 날짜를 클릭하여 회차별 불가일정을 등록하세요
         </p>
       </div>
       <UnavailableCalendar
         actorId={actorId}
-        initialDates={unavailableDates.map((u) =>
-          u.date.toISOString().split("T")[0]
-        )}
+        initialPerformanceDateIds={unavailableDates.map((u) => u.performanceDateId)}
       />
     </div>
   );

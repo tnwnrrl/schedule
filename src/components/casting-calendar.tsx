@@ -151,14 +151,14 @@ export function CastingCalendar() {
     return Object.values(data.castings).filter((c) => c.actorId === actorId).length;
   };
 
-  // 특정 날짜에 불가일정인 배우 필터
-  const getAvailableActors = (dateStr: string, roleType: string): Actor[] => {
+  // 특정 회차에 불가일정인 배우 필터
+  const getAvailableActors = (perfId: string, roleType: string): Actor[] => {
     if (!data) return [];
     return data.actors
       .filter((a) => a.roleType === roleType)
       .filter((a) => {
-        const unavailDates = data.unavailable[a.id] || [];
-        return !unavailDates.includes(dateStr);
+        const unavailIds = data.unavailable[a.id] || [];
+        return !unavailIds.includes(perfId);
       });
   };
 
@@ -243,7 +243,7 @@ export function CastingCalendar() {
 
                   {(["MALE_LEAD", "FEMALE_LEAD"] as const).map((roleType) => {
                     const key = `${perf.id}_${roleType}`;
-                    const available = getAvailableActors(selectedDate, roleType);
+                    const available = getAvailableActors(perf.id, roleType);
                     const currentValue = dialogCastings[key] || "";
 
                     return (

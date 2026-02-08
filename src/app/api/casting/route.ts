@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 해당 날짜에 배우가 불가일정인지 확인
+  // 해당 회차에 배우가 불가일정인지 확인
   const perfDate = await prisma.performanceDate.findUnique({
     where: { id: performanceDateId },
   });
@@ -78,17 +78,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const dateStr = perfDate.date.toISOString().split("T")[0];
   const isUnavailable = await prisma.unavailableDate.findFirst({
     where: {
       actorId,
-      date: new Date(dateStr),
+      performanceDateId,
     },
   });
 
   if (isUnavailable) {
     return NextResponse.json(
-      { error: "해당 배우는 이 날짜에 불가일정이 등록되어 있습니다" },
+      { error: "해당 배우는 이 회차에 불가일정이 등록되어 있습니다" },
       { status: 400 }
     );
   }

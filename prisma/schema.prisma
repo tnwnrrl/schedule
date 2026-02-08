@@ -69,27 +69,29 @@ model Actor {
 }
 
 model PerformanceDate {
-  id        String    @id @default(cuid())
-  date      DateTime
-  startTime String
-  endTime   String?
-  label     String?
-  castings  Casting[]
-  createdAt DateTime  @default(now())
+  id               String            @id @default(cuid())
+  date             DateTime
+  startTime        String
+  endTime          String?
+  label            String?
+  castings         Casting[]
+  unavailableDates UnavailableDate[]
+  createdAt        DateTime          @default(now())
 
   @@unique([date, startTime])
 }
 
 model UnavailableDate {
-  id              String   @id @default(cuid())
-  actorId         String
-  date            DateTime
-  synced          Boolean  @default(false)
-  calendarEventId String?
-  actor           Actor    @relation(fields: [actorId], references: [id], onDelete: Cascade)
-  createdAt       DateTime @default(now())
+  id                String          @id @default(cuid())
+  actorId           String
+  performanceDateId String
+  synced            Boolean         @default(false)
+  calendarEventId   String?
+  actor             Actor           @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  performanceDate   PerformanceDate @relation(fields: [performanceDateId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
 
-  @@unique([actorId, date])
+  @@unique([actorId, performanceDateId])
 }
 
 model Casting {

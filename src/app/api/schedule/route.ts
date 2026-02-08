@@ -63,13 +63,10 @@ export async function GET(req: NextRequest) {
   const endDate = new Date(Date.UTC(year, month, 1));
 
   // 병렬 조회
-  const [perfDates, unavailableRows, actors] = await Promise.all([
+  const [perfDates, actors] = await Promise.all([
     prisma.performanceDate.findMany({
       where: { date: { gte: startDate, lt: endDate } },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
-    }),
-    prisma.unavailableDate.findMany({
-      where: { date: { gte: startDate, lt: endDate } },
     }),
     prisma.actor.findMany({
       orderBy: [{ roleType: "asc" }, { name: "asc" }],
@@ -89,14 +86,19 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Casting 조회 (perfDateIds 필요)
+  // Casting + UnavailableDate 조회 (perfDateIds 필요)
   const perfDateIds = perfDates.map((p) => p.id);
-  const castingRows = await prisma.casting.findMany({
-    where: { performanceDateId: { in: perfDateIds } },
-    include: {
-      actor: { select: { id: true, name: true, roleType: true } },
-    },
-  });
+  const [castingRows, unavailableRows] = await Promise.all([
+    prisma.casting.findMany({
+      where: { performanceDateId: { in: perfDateIds } },
+      include: {
+        actor: { select: { id: true, name: true, roleType: true } },
+      },
+    }),
+    prisma.unavailableDate.findMany({
+      where: { performanceDateId: { in: perfDateIds } },
+    }),
+  ]);
 
   const castings: Record<string, { actorId: string; actorName: string }> = {};
   for (const c of castingRows) {
@@ -106,11 +108,11 @@ export async function GET(req: NextRequest) {
     };
   }
 
-  // UnavailableDate 매핑
+  // UnavailableDate 매핑 (performanceDateId 기준)
   const unavailable: Record<string, string[]> = {};
   for (const u of unavailableRows) {
     if (!unavailable[u.actorId]) unavailable[u.actorId] = [];
-    unavailable[u.actorId].push(u.date.toISOString().split("T")[0]);
+    unavailable[u.actorId].push(u.performanceDateId);
   }
 
   return NextResponse.json({

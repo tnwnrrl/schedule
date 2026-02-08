@@ -16,14 +16,17 @@ export async function GET(req: NextRequest) {
 
   const unavailableDates = await prisma.unavailableDate.findMany({
     where,
-    include: { actor: { select: { name: true, roleType: true } } },
-    orderBy: { date: "asc" },
+    include: {
+      actor: { select: { name: true, roleType: true } },
+      performanceDate: { select: { date: true, startTime: true } },
+    },
+    orderBy: { performanceDate: { date: "asc" } },
   });
 
   return NextResponse.json(unavailableDates);
 }
 
-// POST /api/unavailable - 불가일정 토글 (추가/삭제)
+// POST /api/unavailable - 불가일정 동기화 (추가/삭제)
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) {
@@ -31,11 +34,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { actorId, dates } = body as { actorId: string; dates: string[] };
+  const { actorId, performanceDateIds } = body as {
+    actorId: string;
+    performanceDateIds: string[];
+  };
 
-  if (!actorId || !dates || !Array.isArray(dates)) {
+  if (!actorId || !performanceDateIds || !Array.isArray(performanceDateIds)) {
     return NextResponse.json(
-      { error: "actorId와 dates 배열은 필수입니다" },
+      { error: "actorId와 performanceDateIds 배열은 필수입니다" },
       { status: 400 }
     );
   }
@@ -49,27 +55,22 @@ export async function POST(req: NextRequest) {
   const existing = await prisma.unavailableDate.findMany({
     where: { actorId },
   });
-  const existingDates = new Set(
-    existing.map((u) => u.date.toISOString().split("T")[0])
-  );
+  const existingIds = new Set(existing.map((u) => u.performanceDateId));
+  const newIds = new Set(performanceDateIds);
 
-  const newDates = new Set(dates);
+  // 추가할 회차 (newIds에 있고 existing에 없는 것)
+  const toAdd = performanceDateIds.filter((id) => !existingIds.has(id));
 
-  // 추가할 날짜 (newDates에 있고 existing에 없는 것)
-  const toAdd = dates.filter((d) => !existingDates.has(d));
-
-  // 삭제할 날짜 (existing에 있고 newDates에 없는 것)
-  const toRemove = existing.filter(
-    (u) => !newDates.has(u.date.toISOString().split("T")[0])
-  );
+  // 삭제할 회차 (existing에 있고 newIds에 없는 것)
+  const toRemove = existing.filter((u) => !newIds.has(u.performanceDateId));
 
   // 트랜잭션으로 일괄 처리
   await prisma.$transaction([
-    ...toAdd.map((dateStr) =>
+    ...toAdd.map((performanceDateId) =>
       prisma.unavailableDate.create({
         data: {
           actorId,
-          date: new Date(dateStr),
+          performanceDateId,
         },
       })
     ),
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
   // 업데이트된 불가일정 반환
   const updated = await prisma.unavailableDate.findMany({
     where: { actorId },
-    orderBy: { date: "asc" },
+    orderBy: { performanceDate: { date: "asc" } },
   });
 
   return NextResponse.json(updated);

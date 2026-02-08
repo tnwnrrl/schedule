@@ -19,13 +19,13 @@ export async function POST() {
   // 1. 미동기화 불가일정 동기화
   const unsyncedUnavailable = await prisma.unavailableDate.findMany({
     where: { synced: false },
-    include: { actor: true },
+    include: { actor: true, performanceDate: true },
   });
 
   for (const item of unsyncedUnavailable) {
     if (!item.actor.calendarId) continue;
 
-    const dateStr = item.date.toISOString().split("T")[0];
+    const dateStr = item.performanceDate.date.toISOString().split("T")[0];
     const eventId = await createUnavailableEvent(
       item.actor.calendarId,
       item.actor.name,
