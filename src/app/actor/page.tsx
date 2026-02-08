@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { ActorSchedule } from "@/components/actor-schedule";
+import { ActorCalendar } from "@/components/actor-calendar";
 
 export default async function ActorDashboard() {
   const session = await auth();
@@ -24,19 +24,6 @@ export default async function ActorDashboard() {
     where: { id: actorId },
   });
 
-  const castings = await prisma.casting.findMany({
-    where: { actorId },
-    include: {
-      performanceDate: true,
-    },
-    orderBy: { performanceDate: { date: "asc" } },
-  });
-
-  const unavailableDates = await prisma.unavailableDate.findMany({
-    where: { actorId },
-    orderBy: { date: "asc" },
-  });
-
   return (
     <div className="space-y-6">
       <div>
@@ -45,19 +32,7 @@ export default async function ActorDashboard() {
           {actor?.name} ({actor?.roleType === "MALE_LEAD" ? "남1" : "여1"})
         </p>
       </div>
-      <ActorSchedule
-        castings={castings.map((c) => ({
-          id: c.id,
-          roleType: c.roleType,
-          date: c.performanceDate.date.toISOString(),
-          startTime: c.performanceDate.startTime,
-          endTime: c.performanceDate.endTime,
-          label: c.performanceDate.label,
-        }))}
-        unavailableDates={unavailableDates.map((u) =>
-          u.date.toISOString().split("T")[0]
-        )}
-      />
+      <ActorCalendar actorId={actorId} />
     </div>
   );
 }

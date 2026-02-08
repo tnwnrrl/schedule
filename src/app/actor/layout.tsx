@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth, signOut } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { NavBar } from "@/components/nav-bar";
 
@@ -12,8 +12,15 @@ export default async function ActorLayout({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <NavBar userName={session.user.name} userRole={session.user.role} />
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <NavBar
+        userName={session.user.name}
+        userRole={session.user.role}
+        signOutAction={async () => {
+          "use server";
+          await signOut({ redirectTo: "/login" });
+        }}
+      />
+      <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
     </div>
   );
 }

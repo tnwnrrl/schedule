@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { UnavailablePicker } from "@/components/unavailable-picker";
+import { UnavailableCalendar } from "@/components/unavailable-calendar";
 
 export default async function UnavailablePage() {
   const session = await auth();
@@ -27,28 +27,19 @@ export default async function UnavailablePage() {
     orderBy: { date: "asc" },
   });
 
-  const performanceDates = await prisma.performanceDate.findMany({
-    orderBy: [{ date: "asc" }, { startTime: "asc" }],
-  });
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">불가일정 등록</h1>
         <p className="text-gray-600">
-          {actor?.name} - 출연이 불가능한 공연 날짜를 선택하세요
+          {actor?.name} - 달력에서 날짜를 클릭하여 불가일정을 등록하세요
         </p>
       </div>
-      <UnavailablePicker
+      <UnavailableCalendar
         actorId={actorId}
         initialDates={unavailableDates.map((u) =>
           u.date.toISOString().split("T")[0]
         )}
-        performanceDates={performanceDates.map((p) => ({
-          date: p.date.toISOString().split("T")[0],
-          startTime: p.startTime,
-          label: p.label,
-        }))}
       />
     </div>
   );

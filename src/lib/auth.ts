@@ -5,7 +5,7 @@ import { prisma } from "./prisma";
 
 const adminEmails = (process.env.ADMIN_EMAILS ?? "")
   .split(",")
-  .map((e) => e.trim())
+  .map((e) => e.trim().toLowerCase())
   .filter(Boolean);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -26,7 +26,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       });
 
       if (!existingUser) {
-        const role = adminEmails.includes(user.email) ? "ADMIN" : "ACTOR";
+        const role = adminEmails.includes(user.email.toLowerCase()) ? "ADMIN" : "ACTOR";
         setTimeout(async () => {
           try {
             await prisma.user.update({

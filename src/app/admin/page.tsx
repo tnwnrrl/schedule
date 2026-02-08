@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, CalendarDays, Ban, Theater } from "lucide-react";
 import Link from "next/link";
+import { DashboardCalendar } from "@/components/dashboard-calendar";
 
 export default async function AdminDashboard() {
   const [actorCount, performanceCount, castingCount, unavailableCount] =
@@ -62,6 +63,15 @@ export default async function AdminDashboard() {
           </Link>
         ))}
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>배정 현황</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DashboardCalendar />
+        </CardContent>
+      </Card>
     </div>
   );
 }

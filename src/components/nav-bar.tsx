@@ -9,9 +9,10 @@ import { LogOut } from "lucide-react";
 interface NavBarProps {
   userName?: string | null;
   userRole: "ADMIN" | "ACTOR";
+  signOutAction: () => Promise<void>;
 }
 
-export function NavBar({ userName, userRole }: NavBarProps) {
+export function NavBar({ userName, userRole, signOutAction }: NavBarProps) {
   const pathname = usePathname();
 
   const adminLinks = [
@@ -29,7 +30,7 @@ export function NavBar({ userName, userRole }: NavBarProps) {
 
   return (
     <header className="border-b bg-white">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <div className="flex items-center gap-6">
           <Link href="/" className="text-lg font-bold">
             공연 스케줄
@@ -53,7 +54,7 @@ export function NavBar({ userName, userRole }: NavBarProps) {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-gray-600">{userName}</span>
-          <form action="/api/auth/signout" method="POST">
+          <form action={signOutAction}>
             <Button variant="ghost" size="sm" type="submit">
               <LogOut className="h-4 w-4" />
             </Button>

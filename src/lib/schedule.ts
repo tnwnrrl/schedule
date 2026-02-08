@@ -1,7 +1,3 @@
-// 공연 일정 상수 - 나중에 실제 일정으로 채움
-// 시드 데이터에서 PerformanceDate 테이블로 관리됨
-// 이 파일은 공통 유틸리티만 제공
-
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -19,4 +15,18 @@ export function formatPerformanceDateTime(
     return `${dateStr} ${startTime}~${endTime}`;
   }
   return `${dateStr} ${startTime}`;
+}
+
+/**
+ * 해당 월의 날짜 배열 생성 (YYYY-MM-DD 형식)
+ */
+export function getMonthDates(year: number, month: number): string[] {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const dates: string[] = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const m = String(month).padStart(2, "0");
+    const d = String(day).padStart(2, "0");
+    dates.push(`${year}-${m}-${d}`);
+  }
+  return dates;
 }
