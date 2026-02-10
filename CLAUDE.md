@@ -11,28 +11,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 기술 스택
 
 - **프레임워크**: Next.js 16 (App Router) + React 19
-- **언어**: TypeScript
+- **언어**: TypeScript (경로 별칭 `@/*` → `./src/*`)
 - **DB**: SQLite (로컬) + Turso/LibSQL (프로덕션, `@prisma/adapter-libsql`)
 - **ORM**: Prisma 6
-- **인증**: Auth.js v5 (next-auth beta.30) + Google OAuth
-- **캘린더**: Google Calendar API (Service Account, googleapis)
-- **UI**: Tailwind CSS v4 + shadcn/ui (Radix UI)
+- **인증**: Auth.js v5 (next-auth beta.30) + Google OAuth + JWT 전략
+- **캘린더**: `@googleapis/calendar` + `google-auth-library` (Service Account)
+- **UI**: Tailwind CSS v4 + shadcn/ui (Radix UI, new-york 스타일)
 
 ## 개발 명령어
 
 ```bash
+npm run dev              # next dev (로컬 개발 서버)
 npm run build            # prisma generate && next build
-npm run db:migrate       # prisma migrate dev
-npm run db:seed          # npx tsx prisma/seed.ts
-npm run db:studio        # prisma studio
 npm run lint             # eslint
+npm run db:migrate       # prisma migrate dev
+npm run db:seed          # npx tsx prisma/seed.ts (6명 배우 + 10회 공연 샘플)
+npm run db:studio        # prisma studio (DB GUI)
 ```
 
-## 배포 & 테스트 규칙
+## 배포
 
-- **테스트는 반드시 프로덕션 서버에서 수행**: 코드 변경 → 커밋 → `git push origin main` → Vercel 자동 배포 → 프로덕션 URL에서 확인
-- Vercel 자동 배포가 트리거되지 않으면 `npx vercel deploy --prod --yes`로 수동 배포
-- **DB 마이그레이션**: 스키마 변경 시 Turso 프로덕션 DB에 `@libsql/client`로 직접 DDL 실행 (prisma db push는 sqlite provider라 libsql URL 불가)
+- `git push origin main` → Vercel 자동 배포 (트리거 안 되면 `npx vercel deploy --prod --yes`)
+- **DB 마이그레이션**: Turso 프로덕션 DB에 `@libsql/client`로 직접 DDL 실행 (prisma db push는 sqlite provider라 libsql URL 불가)
 - Turso 접속 정보: `npx vercel env pull .env.turso --environment production`으로 가져온 후 사용, 작업 완료 후 반드시 삭제
 
 ## 아키텍처
@@ -41,22 +41,43 @@ npm run lint             # eslint
 
 ```
 /login              → 공개 (Google OAuth)
-/admin/*            → ADMIN 전용 (middleware가 role 체크)
+/                   → 리다이렉트 (ADMIN → /admin, ACTOR → /actor)
+/admin/*            → ADMIN 전용
 /actor/*            → 인증된 사용자 (ACTOR + ADMIN)
 /api/*              → 인증 필수 (엔드포인트별 role 체크)
 ```
 
-`middleware.ts`가 인증/권한 가드 담당. 비인증 → `/login`, 비관리자 → `/actor` 리다이렉트.
+`middleware.ts` matcher: `["/", "/admin/:path*", "/actor/:path*", "/login", "/api/((?!auth).*)"]`
+- 비인증 → `/login`, 비관리자가 admin 접근 → `/actor` 리다이렉트
+- `/api/auth/*`는 matcher 제외 (OAuth 콜백 통과)
 
 ### 데이터 모델 핵심 관계
 
-- `User` ↔ `Actor`: 1:1 (User.actorId로 연결, 관리자가 수동 link)
-- `Actor` → `UnavailableDate[]`: 회차별 불가일정 (`performanceDateId` FK)
-- `Actor` → `Casting[]`: 배역 배정
-- `PerformanceDate` → `Casting[]`, `UnavailableDate[]`
-- 유니크 제약: `Casting(performanceDateId, roleType)`, `UnavailableDate(actorId, performanceDateId)`, `PerformanceDate(date, startTime)`
+```
+User ←1:1→ Actor (User.actorId, 관리자가 수동 link)
+Actor → UnavailableDate[] (performanceDateId FK, 회차 단위)
+Actor → Casting[]
+PerformanceDate → Casting[], UnavailableDate[]
+```
 
-### DB 연결 패턴 (`src/lib/prisma.ts`)
+유니크 제약:
+- `Casting(performanceDateId, roleType)` — 회차당 역할 1명
+- `UnavailableDate(actorId, performanceDateId)` — 중복 불가일정 방지
+- `PerformanceDate(date, startTime)` — 회차 중복 방지
+
+### 핵심 데이터 패턴: 불가일정은 날짜가 아닌 회차(performanceDateId)
+
+불가일정(`UnavailableDate`)은 날짜 문자열이 아닌 **performanceDateId** FK로 연결된다. API 응답에서도 동일:
+
+```typescript
+// /api/schedule 응답의 unavailable 구조
+unavailable: Record<actorId, performanceDateId[]>  // ← 날짜 아님, 회차 ID 배열
+
+// /api/unavailable POST 요청 본문
+{ actorId: string, performanceDateIds: string[] }  // 기존 대비 diff 계산 → 추가/삭제 트랜잭션
+```
+
+### DB 연결 (`src/lib/prisma.ts`)
 
 `TURSO_DATABASE_URL` 환경변수 유무로 분기:
 - 있으면 → `PrismaLibSql` 어댑터로 Turso 연결 (프로덕션)
@@ -64,32 +85,64 @@ npm run lint             # eslint
 
 ### 인증 흐름 (`src/lib/auth.ts`)
 
-Auth.js v5 JWT 전략. JWT callback에서 DB 조회하여 `role`, `actorId`를 토큰에 주입. Session callback에서 클라이언트에 전달. `ADMIN_EMAILS` 환경변수 기반 자동 role 할당은 최초 가입 시만 적용 → 기존 유저 role 변경은 DB 직접 수정 필요.
+Auth.js v5 JWT 전략. JWT callback에서 DB 조회하여 `role`, `actorId`를 토큰에 주입. `ADMIN_EMAILS` 환경변수 기반 자동 role 할당은 최초 가입 시만 적용 → 기존 유저 role 변경은 DB 직접 수정.
 
-### API 패턴
+Session 확장 타입 (`src/types/next-auth.d.ts`):
+```typescript
+user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
+```
 
-- `/api/schedule?year=&month=`: 월별 통합 데이터 반환 (performances, castings, unavailable, actors). 해당 월 PerformanceDate 없으면 SHOW_TIMES 기준 자동 생성.
-- `/api/unavailable`: POST는 `performanceDateIds` 배열을 받아 기존 대비 diff(추가/삭제) 트랜잭션 처리.
-- `/api/casting`: POST 시 배우 roleType 일치 + 불가일정 미등록 검증 후 upsert.
+### API 엔드포인트
+
+| 엔드포인트 | 메서드 | 권한 | 설명 |
+|-----------|--------|------|------|
+| `/api/schedule?year=&month=` | GET | Auth | 월별 통합 데이터 (performances, castings, unavailable, actors). 해당 월 PerformanceDate 없으면 SHOW_TIMES 기준 자동 생성 |
+| `/api/unavailable?actorId=` | GET | Auth | 불가일정 조회 |
+| `/api/unavailable` | POST | 본인/ADMIN | performanceDateIds 배열 → 기존 대비 diff 트랜잭션 |
+| `/api/casting` | POST | ADMIN | 단건 배정. 배우 roleType + 불가일정 검증 후 upsert. 검증 쿼리 3개 `Promise.all` 병렬 |
+| `/api/casting/batch` | POST | ADMIN | 일괄 배정. 필요 데이터 한번에 조회 → Map 검증 → 단일 트랜잭션 |
+| `/api/actors`, `/api/actors/[id]` | GET/POST/PUT/DELETE | Auth/ADMIN | 배우 CRUD |
+| `/api/actors/[id]/link` | POST | ADMIN | User ↔ Actor 연결 |
+| `/api/calendar/sync` | POST | ADMIN | synced=false인 항목 Google Calendar 동기화 |
 
 ### 컴포넌트 구조
 
-- **서버 컴포넌트**: `src/app/*/page.tsx` - Prisma 직접 쿼리, 인증 체크
-- **클라이언트 컴포넌트**: `src/components/*.tsx` ("use client") - 달력 UI, Dialog, 상태 관리
-- **공유 달력 위젯**: `ScheduleCalendar` - renderCell/onCellClick 콜백으로 용도별 커스텀
-- **UI 프리미티브**: `src/components/ui/` - shadcn/ui (Radix + Tailwind)
+- **서버 컴포넌트**: `src/app/*/page.tsx` — Prisma 직접 쿼리, `auth()` 인증 체크
+- **클라이언트 컴포넌트**: `src/components/*.tsx` ("use client") — 달력 UI, Dialog, `fetch` API 호출
+- **공유 달력**: `ScheduleCalendar` — `renderCell(dateStr, day)` / `onCellClick(dateStr)` 콜백 패턴
+- **UI 프리미티브**: `src/components/ui/` — shadcn/ui (Radix + Tailwind)
+- **로딩 스켈레톤**: 각 라우트 세그먼트별 `loading.tsx` (admin, admin/actors, admin/casting, actor)
 
-### 공연 시간표 (상수)
+데이터 흐름: 서버 컴포넌트가 페이지 셸 렌더 → 클라이언트 캘린더 컴포넌트가 `/api/schedule` fetch → 월별 데이터로 렌더
+
+### 상수 (`src/lib/constants.ts`)
 
 ```typescript
-// src/lib/constants.ts
 SHOW_TIMES = ["10:45", "13:00", "15:15", "17:30", "19:45"]  // 하루 5회차
+SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 ```
+
+역할 타입 (`src/types/index.ts`): `MALE_LEAD`("남1"), `FEMALE_LEAD`("여1")
 
 ### Google Calendar 연동 (`src/lib/google-calendar.ts`)
 
-Service Account JWT 인증. 불가일정 → 배우 개인 캘린더에 종일 이벤트(빨강). 배정 → 역할별 캘린더에 시간 이벤트(남1: 파랑, 여1: 보라). `synced`/`calendarEventId` 필드로 동기화 상태 추적.
+`@googleapis/calendar` + `google-auth-library` (JWT). Auth 인스턴스 모듈 레벨 캐싱.
+
+- 불가일정 → 배우 개인 캘린더(`Actor.calendarId`)에 종일 이벤트 (빨강 colorId:11)
+- 배정 → 역할별 캘린더(`CALENDAR_MALE_LEAD`/`CALENDAR_FEMALE_LEAD`)에 시간 이벤트 (파랑:9 / 보라:6)
+- `synced` + `calendarEventId` 필드로 동기화 상태 추적
+- `/api/calendar/sync`에서 관리자 수동 트리거
 
 ## 환경변수
 
-`.env.example` 참조. 프로덕션 환경변수는 Vercel Dashboard 또는 `npx vercel env` CLI로 관리.
+`.env.example` 참조. 프로덕션은 Vercel Dashboard 또는 `npx vercel env` CLI로 관리.
+
+필수:
+- `DATABASE_URL` — SQLite 경로 (로컬)
+- `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — 인증
+- `ADMIN_EMAILS` — 쉼표 구분 관리자 이메일
+
+프로덕션 전용:
+- `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` — Calendar API
+- `CALENDAR_MALE_LEAD`, `CALENDAR_FEMALE_LEAD` — 역할 캘린더 ID
