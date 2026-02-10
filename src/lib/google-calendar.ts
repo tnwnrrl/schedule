@@ -1,6 +1,12 @@
-import { google } from "googleapis";
+import { calendar as googleCalendar } from "@googleapis/calendar";
+import { JWT } from "google-auth-library";
+
+// 모듈 레벨 캐싱 (매 호출마다 재생성 방지)
+let cachedAuth: JWT | null = null;
 
 function getAuth() {
+  if (cachedAuth) return cachedAuth;
+
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(
     /\\n/g,
@@ -11,15 +17,16 @@ function getAuth() {
     throw new Error("Google Service Account 환경변수가 설정되지 않았습니다");
   }
 
-  return new google.auth.JWT({
+  cachedAuth = new JWT({
     email,
     key,
     scopes: ["https://www.googleapis.com/auth/calendar"],
   });
+  return cachedAuth;
 }
 
 function getCalendar() {
-  return google.calendar({ version: "v3", auth: getAuth() });
+  return googleCalendar({ version: "v3", auth: getAuth() });
 }
 
 // 불가일정 → 배우 개인 캘린더에 이벤트 생성

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ScheduleCalendar } from "@/components/schedule-calendar";
 import { SHOW_TIMES, SHOW_TIME_LABELS } from "@/lib/constants";
 import { ROLE_TYPE_LABEL } from "@/types";
@@ -124,20 +124,23 @@ export function CastingCalendar() {
     }
 
     try {
-      for (const change of changes) {
-        const res = await fetch("/api/casting", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(change),
-        });
-        if (!res.ok) {
-          const err = await res.json();
-          toast.error(err.error || "배정 실패");
-          setSaving(false);
-          return;
-        }
+      const res = await fetch("/api/casting/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ changes }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.error || "배정 실패");
+        setSaving(false);
+        return;
       }
-      toast.success(`${changes.length}건 배정 완료`);
+      const result = await res.json();
+      if (result.failCount > 0) {
+        toast.error(`${result.failCount}건 실패`);
+      } else {
+        toast.success(`${result.successCount}건 배정 완료`);
+      }
       setSelectedDate(null);
       await fetchData(year, month);
     } catch {
@@ -147,21 +150,37 @@ export function CastingCalendar() {
     }
   };
 
-  // 배우별 배정 횟수 계산
+  // 배우별 배정 횟수 (사전 계산)
+  const actorCastingCounts = useMemo(() => {
+    if (!data) return new Map<string, number>();
+    const counts = new Map<string, number>();
+    for (const c of Object.values(data.castings)) {
+      counts.set(c.actorId, (counts.get(c.actorId) || 0) + 1);
+    }
+    return counts;
+  }, [data]);
+
   const getActorCastingCount = (actorId: string): number => {
-    if (!data) return 0;
-    return Object.values(data.castings).filter((c) => c.actorId === actorId).length;
+    return actorCastingCounts.get(actorId) || 0;
   };
+
+  // 역할별 배우 목록 (사전 분류)
+  const actorsByRole = useMemo(() => {
+    if (!data) return { MALE_LEAD: [] as Actor[], FEMALE_LEAD: [] as Actor[] };
+    return {
+      MALE_LEAD: data.actors.filter((a) => a.roleType === "MALE_LEAD"),
+      FEMALE_LEAD: data.actors.filter((a) => a.roleType === "FEMALE_LEAD"),
+    };
+  }, [data]);
 
   // 특정 회차에 불가일정인 배우 필터
   const getAvailableActors = (perfId: string, roleType: string): Actor[] => {
     if (!data) return [];
-    return data.actors
-      .filter((a) => a.roleType === roleType)
-      .filter((a) => {
-        const unavailIds = data.unavailable[a.id] || [];
-        return !unavailIds.includes(perfId);
-      });
+    const actors = actorsByRole[roleType as keyof typeof actorsByRole] || [];
+    return actors.filter((a) => {
+      const unavailIds = data.unavailable[a.id] || [];
+      return !unavailIds.includes(perfId);
+    });
   };
 
   const renderCell = (dateStr: string) => {

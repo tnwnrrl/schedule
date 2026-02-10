@@ -119,10 +119,12 @@ export async function GET(req: NextRequest) {
     unavailable[u.actorId].push(u.performanceDateId);
   }
 
-  return NextResponse.json({
-    performances,
-    castings,
-    unavailable,
-    actors,
-  });
+  return NextResponse.json(
+    { performances, castings, unavailable, actors },
+    {
+      headers: {
+        "Cache-Control": "private, s-maxage=30, stale-while-revalidate=60",
+      },
+    }
+  );
 }

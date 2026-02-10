@@ -52,8 +52,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, action: "removed" });
   }
 
-  // 배우의 역할 타입 확인
-  const actor = await prisma.actor.findUnique({ where: { id: actorId } });
+  // 배우, 공연일, 불가일정을 병렬 조회
+  const [actor, perfDate, unavailable] = await Promise.all([
+    prisma.actor.findUnique({ where: { id: actorId } }),
+    prisma.performanceDate.findUnique({ where: { id: performanceDateId } }),
+    prisma.unavailableDate.findFirst({ where: { actorId, performanceDateId } }),
+  ]);
+
   if (!actor) {
     return NextResponse.json(
       { error: "배우를 찾을 수 없습니다" },
@@ -66,26 +71,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-
-  // 해당 회차에 배우가 불가일정인지 확인
-  const perfDate = await prisma.performanceDate.findUnique({
-    where: { id: performanceDateId },
-  });
   if (!perfDate) {
     return NextResponse.json(
       { error: "공연일을 찾을 수 없습니다" },
       { status: 404 }
     );
   }
-
-  const isUnavailable = await prisma.unavailableDate.findFirst({
-    where: {
-      actorId,
-      performanceDateId,
-    },
-  });
-
-  if (isUnavailable) {
+  if (unavailable) {
     return NextResponse.json(
       { error: "해당 배우는 이 회차에 불가일정이 등록되어 있습니다" },
       { status: 400 }
