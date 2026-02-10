@@ -191,7 +191,9 @@ export function CastingCalendar() {
     const slots = perfs.map((p) => {
       const male = data.castings[`${p.id}_MALE_LEAD`];
       const female = data.castings[`${p.id}_FEMALE_LEAD`];
-      return { startTime: p.startTime, male, female };
+      const maleAvailable = !male ? getAvailableActors(p.id, "MALE_LEAD").length > 0 : true;
+      const femaleAvailable = !female ? getAvailableActors(p.id, "FEMALE_LEAD").length > 0 : true;
+      return { startTime: p.startTime, male, female, maleAvailable, femaleAvailable };
     });
 
     // 요약: 배정된 슬롯 수
@@ -203,16 +205,21 @@ export function CastingCalendar() {
         {slots.map((s, i) => {
           const mName = s.male?.actorName;
           const fName = s.female?.actorName;
-          const hasBoth = mName && fName;
           return (
             <div key={i} className="flex items-center gap-0.5 leading-tight">
               <span className="text-[10px] text-gray-400 w-3 shrink-0">{i + 1}</span>
-              <span className={cn("truncate", mName ? "text-blue-700" : "text-gray-300")}>
-                {mName || "─"}
+              <span className={cn(
+                "truncate",
+                mName ? "text-blue-700" : !s.maleAvailable ? "text-red-500 font-medium" : "text-gray-300"
+              )}>
+                {mName || (!s.maleAvailable ? "불가" : "─")}
               </span>
               <span className="text-gray-300">/</span>
-              <span className={cn("truncate", fName ? "text-pink-700" : "text-gray-300")}>
-                {fName || "─"}
+              <span className={cn(
+                "truncate",
+                fName ? "text-pink-700" : !s.femaleAvailable ? "text-red-500 font-medium" : "text-gray-300"
+              )}>
+                {fName || (!s.femaleAvailable ? "불가" : "─")}
               </span>
             </div>
           );
