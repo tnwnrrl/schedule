@@ -32,6 +32,29 @@ export async function PUT(
     },
   });
 
+  // 연결된 계정 이메일 수정
+  if (body.userEmail !== undefined) {
+    const linkedUser = await prisma.user.findFirst({ where: { actorId: id } });
+    if (linkedUser) {
+      // 다른 사용자가 이미 사용 중인 이메일인지 확인
+      if (body.userEmail) {
+        const existing = await prisma.user.findFirst({
+          where: { email: body.userEmail, id: { not: linkedUser.id } },
+        });
+        if (existing) {
+          return NextResponse.json(
+            { error: "이미 사용 중인 이메일입니다" },
+            { status: 400 }
+          );
+        }
+      }
+      await prisma.user.update({
+        where: { id: linkedUser.id },
+        data: { email: body.userEmail || null },
+      });
+    }
+  }
+
   return NextResponse.json(actor);
 }
 

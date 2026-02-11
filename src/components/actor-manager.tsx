@@ -64,6 +64,7 @@ export function ActorManager({
   const [editingActor, setEditingActor] = useState<ActorData | null>(null);
   const [formName, setFormName] = useState("");
   const [formRoleType, setFormRoleType] = useState<string>("MALE_LEAD");
+  const [formEmail, setFormEmail] = useState("");
   const router = useRouter();
 
   const openAddDialog = () => {
@@ -77,6 +78,7 @@ export function ActorManager({
     setEditingActor(actor);
     setFormName(actor.name);
     setFormRoleType(actor.roleType);
+    setFormEmail(actor.linkedUser?.email || "");
     setDialogOpen(true);
   };
 
@@ -92,9 +94,16 @@ export function ActorManager({
           const res = await fetch(`/api/actors/${editingActor.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: formName, roleType: formRoleType }),
+            body: JSON.stringify({
+              name: formName,
+              roleType: formRoleType,
+              ...(editingActor.linkedUser && { userEmail: formEmail || null }),
+            }),
           });
-          if (!res.ok) throw new Error("수정 실패");
+          if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            throw new Error(err?.error || "수정 실패");
+          }
           toast.success("배우 정보가 수정되었습니다");
         } else {
           const res = await fetch("/api/actors", {
@@ -202,6 +211,21 @@ export function ActorManager({
                   </SelectContent>
                 </Select>
               </div>
+              {editingActor?.linkedUser && (
+                <div>
+                  <Label htmlFor="email">계정 이메일</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    placeholder="연결된 계정 이메일"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    연결된 Google 계정의 이메일을 수정합니다
+                  </p>
+                </div>
+              )}
               <Button
                 onClick={handleSave}
                 disabled={isPending}
