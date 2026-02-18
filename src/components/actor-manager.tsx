@@ -30,6 +30,8 @@ import {
 import { toast } from "sonner";
 import { ROLE_TYPE_LABEL } from "@/types";
 import type { RoleType } from "@/types";
+import { SHOW_TIME_LABELS } from "@/lib/constants";
+import type { ShowTime } from "@/lib/constants";
 import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -73,6 +75,10 @@ export function ActorManager({
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [monthlyUnavailable, setMonthlyUnavailable] = useState<Record<string, number>>({});
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  // 불가일정 상세 보기용 데이터
+  const [perfIdToInfo, setPerfIdToInfo] = useState<Record<string, { date: string; startTime: string }>>({});
+  const [unavailableRaw, setUnavailableRaw] = useState<Record<string, string[]>>({});
+  const [detailActor, setDetailActor] = useState<ActorData | null>(null);
 
   const fetchMonthlyData = useCallback(async (y: number, m: number) => {
     setMonthlyLoading(true);
@@ -80,7 +86,19 @@ export function ActorManager({
       const res = await fetch(`/api/schedule?year=${y}&month=${m}`);
       if (!res.ok) return;
       const data = await res.json();
+      const performances: Record<string, Array<{ id: string; startTime: string }>> = data.performances || {};
       const unavail: Record<string, string[]> = data.unavailable || {};
+
+      // performanceDateId → { date, startTime } 역매핑
+      const idMap: Record<string, { date: string; startTime: string }> = {};
+      for (const [dateStr, perfs] of Object.entries(performances)) {
+        for (const p of perfs) {
+          idMap[p.id] = { date: dateStr, startTime: p.startTime };
+        }
+      }
+      setPerfIdToInfo(idMap);
+      setUnavailableRaw(unavail);
+
       const counts: Record<string, number> = {};
       for (const [actorId, perfIds] of Object.entries(unavail)) {
         counts[actorId] = (perfIds as string[]).length;
@@ -358,7 +376,14 @@ export function ActorManager({
                     {actor.castingCount}
                   </TableCell>
                   <TableCell className="text-center">
-                    {monthlyLoading ? "..." : (monthlyUnavailable[actor.id] ?? 0)}
+                    {monthlyLoading ? "..." : (
+                      <button
+                        className="underline decoration-dotted underline-offset-2 text-gray-700 hover:text-blue-600 transition-colors"
+                        onClick={() => setDetailActor(actor)}
+                      >
+                        {monthlyUnavailable[actor.id] ?? 0}
+                      </button>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
@@ -394,6 +419,60 @@ export function ActorManager({
           </Table>
         </div>
       ))}
+
+      {/* 불가일정 상세 Dialog */}
+      <Dialog open={!!detailActor} onOpenChange={(open) => { if (!open) setDetailActor(null); }}>
+        <DialogContent className="sm:max-w-md max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {detailActor?.name} — {filterYear}년 {filterMonth}월 불가일정
+            </DialogTitle>
+          </DialogHeader>
+          {detailActor && (() => {
+            const perfIds = unavailableRaw[detailActor.id] || [];
+            const items = perfIds
+              .map((pid) => perfIdToInfo[pid])
+              .filter(Boolean)
+              .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+            if (items.length === 0) {
+              return <p className="text-sm text-gray-500 py-4 text-center">불가일정이 없습니다</p>;
+            }
+
+            // 날짜별 그룹핑
+            const grouped: Record<string, string[]> = {};
+            for (const item of items) {
+              if (!grouped[item.date]) grouped[item.date] = [];
+              grouped[item.date].push(item.startTime);
+            }
+
+            return (
+              <div className="space-y-2">
+                {Object.entries(grouped).map(([date, times]) => {
+                  const d = new Date(date + "T00:00:00");
+                  const dayOfWeek = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+                  const dateLabel = `${d.getMonth() + 1}/${d.getDate()} (${dayOfWeek})`;
+                  return (
+                    <div key={date} className="flex items-start gap-3 py-1.5 border-b last:border-0">
+                      <span className="text-sm font-medium w-20 shrink-0">{dateLabel}</span>
+                      <div className="flex flex-wrap gap-1">
+                        {times.map((t) => (
+                          <Badge key={t} variant="secondary" className="text-xs">
+                            {SHOW_TIME_LABELS[t as ShowTime] || t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className="text-xs text-gray-400 pt-2 text-center">
+                  총 {items.length}건
+                </p>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
