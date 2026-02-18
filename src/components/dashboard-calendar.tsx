@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { ScheduleCalendar } from "@/components/schedule-calendar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -47,6 +47,26 @@ export function DashboardCalendar() {
     setMonth(m);
   };
 
+  // 역할별 배우 목록 (사전 분류)
+  const actorsByRole = useMemo(() => {
+    if (!data) return { MALE_LEAD: 0, FEMALE_LEAD: 0 };
+    return {
+      MALE_LEAD: data.actors.filter((a) => a.roleType === "MALE_LEAD"),
+      FEMALE_LEAD: data.actors.filter((a) => a.roleType === "FEMALE_LEAD"),
+    };
+  }, [data]);
+
+  // 특정 회차에 가용한 배우 수
+  const getAvailableCount = (perfId: string, roleType: string): number => {
+    if (!data || typeof actorsByRole === "object" && !Array.isArray(actorsByRole.MALE_LEAD)) return 0;
+    const actors = actorsByRole[roleType as keyof typeof actorsByRole];
+    if (!Array.isArray(actors)) return 0;
+    return actors.filter((a) => {
+      const unavailIds = data.unavailable[a.id] || [];
+      return !unavailIds.includes(perfId);
+    }).length;
+  };
+
   const renderCell = (dateStr: string) => {
     if (!data) return null;
     const perfs = data.performances[dateStr];
@@ -55,19 +75,44 @@ export function DashboardCalendar() {
     let filled = 0;
     const total = perfs.length * 2;
 
-    for (const p of perfs) {
-      if (data.castings[`${p.id}_MALE_LEAD`]) filled++;
-      if (data.castings[`${p.id}_FEMALE_LEAD`]) filled++;
-    }
+    const slots = perfs.map((p, i) => {
+      const hasMale = !!data.castings[`${p.id}_MALE_LEAD`];
+      const hasFemale = !!data.castings[`${p.id}_FEMALE_LEAD`];
+      if (hasMale) filled++;
+      if (hasFemale) filled++;
+      const maleAvail = getAvailableCount(p.id, "MALE_LEAD");
+      const femaleAvail = getAvailableCount(p.id, "FEMALE_LEAD");
+      return { index: i + 1, hasMale, hasFemale, maleAvail, femaleAvail };
+    });
 
     return (
-      <div className="flex justify-center">
-        <Badge
-          variant={filled === total ? "default" : filled > 0 ? "secondary" : "destructive"}
-          className="text-[10px] px-1 py-0"
-        >
-          {filled}/{total}
-        </Badge>
+      <div className="space-y-0.5">
+        {slots.map((s) => (
+          <div key={s.index} className="flex items-center gap-0.5 leading-tight text-[10px]">
+            <span className="text-gray-400 w-2.5 shrink-0">{s.index}</span>
+            <span className={cn(
+              "w-3 text-center",
+              s.maleAvail === 0 ? "text-red-500 font-bold" : s.hasMale ? "text-blue-600" : "text-blue-400"
+            )}>
+              {s.maleAvail}
+            </span>
+            <span className="text-gray-300">/</span>
+            <span className={cn(
+              "w-3 text-center",
+              s.femaleAvail === 0 ? "text-red-500 font-bold" : s.hasFemale ? "text-pink-600" : "text-pink-400"
+            )}>
+              {s.femaleAvail}
+            </span>
+          </div>
+        ))}
+        <div className="mt-1 flex justify-center">
+          <Badge
+            variant={filled === total ? "default" : filled > 0 ? "secondary" : "destructive"}
+            className="text-[10px] px-1 py-0"
+          >
+            {filled}/{total}
+          </Badge>
+        </div>
       </div>
     );
   };
