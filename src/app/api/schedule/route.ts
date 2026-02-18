@@ -90,9 +90,11 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Casting + UnavailableDate 병렬 조회
+  // Casting + UnavailableDate + Override 병렬 조회
   const perfDateIds = perfDates.map((p) => p.id);
-  const [castingRows, unavailableRows] = await Promise.all([
+  const isAdmin = session.user.role === "ADMIN";
+
+  const [castingRows, unavailableRows, ...overrideResult] = await Promise.all([
     prisma.casting.findMany({
       where: { performanceDateId: { in: perfDateIds } },
       include: {
@@ -102,6 +104,12 @@ export async function GET(req: NextRequest) {
     prisma.unavailableDate.findMany({
       where: { performanceDateId: { in: perfDateIds } },
     }),
+    ...(isAdmin
+      ? [prisma.actorMonthOverride.findMany({
+          where: { year, month },
+          select: { actorId: true },
+        })]
+      : []),
   ]);
 
   const castings: Record<string, { actorId: string; actorName: string }> = {};
@@ -119,8 +127,13 @@ export async function GET(req: NextRequest) {
     unavailable[u.actorId].push(u.performanceDateId);
   }
 
+  // ADMIN일 때 overriddenActors 포함
+  const overriddenActors = isAdmin && overrideResult[0]
+    ? (overrideResult[0] as Array<{ actorId: string }>).map((o) => o.actorId)
+    : undefined;
+
   return NextResponse.json(
-    { performances, castings, unavailable, actors },
+    { performances, castings, unavailable, actors, ...(overriddenActors !== undefined && { overriddenActors }) },
     {
       headers: {
         "Cache-Control": "private, s-maxage=30, stale-while-revalidate=60",

@@ -57,15 +57,16 @@ model User {
 }
 
 model Actor {
-  id               String            @id @default(cuid())
+  id               String               @id @default(cuid())
   name             String
   roleType         String
   calendarId       String?
   user             User?
   unavailableDates UnavailableDate[]
   castings         Casting[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  monthOverrides   ActorMonthOverride[]
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 }
 
 model PerformanceDate {
@@ -111,4 +112,16 @@ model Casting {
   @@unique([performanceDateId, roleType])
   @@index([performanceDateId])
   @@index([actorId])
+}
+
+model ActorMonthOverride {
+  id        String   @id @default(cuid())
+  actorId   String
+  year      Int
+  month     Int
+  createdAt DateTime @default(now())
+  actor     Actor    @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@unique([actorId, year, month])
+  @@index([year, month])
 }

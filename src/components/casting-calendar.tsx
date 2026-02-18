@@ -40,6 +40,7 @@ interface ScheduleData {
   castings: Record<string, { actorId: string; actorName: string }>;
   unavailable: Record<string, string[]>;
   actors: Actor[];
+  overriddenActors?: string[];
 }
 
 export function CastingCalendar() {
@@ -173,11 +174,17 @@ export function CastingCalendar() {
     };
   }, [data]);
 
-  // 특정 회차에 불가일정인 배우 필터
+  // overridden 배우 Set (사전 계산)
+  const overriddenSet = useMemo(() => {
+    return new Set(data?.overriddenActors || []);
+  }, [data?.overriddenActors]);
+
+  // 특정 회차에 불가일정인 배우 필터 (override 반영)
   const getAvailableActors = (perfId: string, roleType: string): Actor[] => {
     if (!data) return [];
     const actors = actorsByRole[roleType as keyof typeof actorsByRole] || [];
     return actors.filter((a) => {
+      if (overriddenSet.has(a.id)) return false;
       const unavailIds = data.unavailable[a.id] || [];
       return !unavailIds.includes(perfId);
     });
