@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +30,7 @@ import {
 import { toast } from "sonner";
 import { ROLE_TYPE_LABEL } from "@/types";
 import type { RoleType } from "@/types";
-import { Plus, Pencil, Trash2, Link as LinkIcon } from "lucide-react";
+import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ActorData {
@@ -66,6 +66,54 @@ export function ActorManager({
   const [formRoleType, setFormRoleType] = useState<string>("MALE_LEAD");
   const [formEmail, setFormEmail] = useState("");
   const router = useRouter();
+
+  // 월별 불가일정
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const [monthlyUnavailable, setMonthlyUnavailable] = useState<Record<string, number>>({});
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  const fetchMonthlyData = useCallback(async (y: number, m: number) => {
+    setMonthlyLoading(true);
+    try {
+      const res = await fetch(`/api/schedule?year=${y}&month=${m}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const unavail: Record<string, string[]> = data.unavailable || {};
+      const counts: Record<string, number> = {};
+      for (const [actorId, perfIds] of Object.entries(unavail)) {
+        counts[actorId] = (perfIds as string[]).length;
+      }
+      setMonthlyUnavailable(counts);
+    } catch {
+      // silent
+    } finally {
+      setMonthlyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMonthlyData(filterYear, filterMonth);
+  }, [filterYear, filterMonth, fetchMonthlyData]);
+
+  const handlePrevMonth = () => {
+    if (filterMonth === 1) {
+      setFilterYear((y) => y - 1);
+      setFilterMonth(12);
+    } else {
+      setFilterMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (filterMonth === 12) {
+      setFilterYear((y) => y + 1);
+      setFilterMonth(1);
+    } else {
+      setFilterMonth((m) => m + 1);
+    }
+  };
 
   const openAddDialog = () => {
     setEditingActor(null);
@@ -173,6 +221,24 @@ export function ActorManager({
 
   return (
     <div className="space-y-4">
+      {/* 월 선택기 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-500">불가일정 기준:</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePrevMonth}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium w-24 text-center">
+              {filterYear}년 {filterMonth}월
+            </span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleNextMonth}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <div className="flex justify-end">
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -252,7 +318,9 @@ export function ActorManager({
                 <TableHead>이름</TableHead>
                 <TableHead>연결된 계정</TableHead>
                 <TableHead className="text-center">배정</TableHead>
-                <TableHead className="text-center">불가</TableHead>
+                <TableHead className="text-center">
+                  불가 ({filterMonth}월)
+                </TableHead>
                 <TableHead className="w-[120px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -290,7 +358,7 @@ export function ActorManager({
                     {actor.castingCount}
                   </TableCell>
                   <TableCell className="text-center">
-                    {actor.unavailableCount}
+                    {monthlyLoading ? "..." : (monthlyUnavailable[actor.id] ?? 0)}
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
