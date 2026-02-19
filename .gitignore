@@ -47,3 +47,6 @@ next-env.d.ts
 # prisma
 *.db
 *.db-journal
+
+# claude docs (credentials 포함)
+/claudedocs/
