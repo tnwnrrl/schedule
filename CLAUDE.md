@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-공연 스케줄 관리 & 배역 배정 웹앱. 배우들이 회차별 불가일정을 등록하고, 관리자(연출)가 배역을 수동 배정하는 시스템. Google Calendar 양방향 연동.
+공연 스케줄 관리 & 배역 배정 웹앱. 배우들이 회차별 불가일정을 등록하고, 관리자(연출)가 배역을 수동 배정하는 시스템. Google Calendar 양방향 연동 + 네이버 예약 크롤러 연동.
 
 **프로덕션 URL**: https://schedule.mysterydam.com
 
@@ -34,6 +34,7 @@ npm run db:studio        # prisma studio (DB GUI)
 - `git push origin main` → Vercel 자동 배포 (트리거 안 되면 `npx vercel deploy --prod --yes`)
 - **DB 마이그레이션**: Turso 프로덕션 DB에 `@libsql/client`로 직접 DDL 실행 (prisma db push는 sqlite provider라 libsql URL 불가)
 - Turso 접속 정보: `npx vercel env pull .env.turso --environment production`으로 가져온 후 사용, 작업 완료 후 반드시 삭제
+- **Vercel Cron**: `vercel.json`에 정의, 매일 03:00 UTC (한국 12:00) 메모 자동 정리
 
 ## 아키텍처
 
@@ -47,9 +48,10 @@ npm run db:studio        # prisma studio (DB GUI)
 /api/*              → 인증 필수 (엔드포인트별 role 체크)
 ```
 
-`middleware.ts` matcher: `["/", "/admin/:path*", "/actor/:path*", "/login", "/api/((?!auth).*)"]`
-- 비인증 → `/login`, 비관리자가 admin 접근 → `/actor` 리다이렉트
-- `/api/auth/*`는 matcher 제외 (OAuth 콜백 통과)
+`src/middleware.ts`에서 인증 처리. 미들웨어 바이패스 경로:
+- `/api/auth/*` — OAuth 콜백
+- `/api/casting/reservations` — 외부 API 키 인증 (RESERVATION_API_KEY)
+- `/api/cron/*` — Vercel Cron 인증 (CRON_SECRET)
 
 ### 데이터 모델 핵심 관계
 
@@ -100,10 +102,31 @@ user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
 | `/api/unavailable?actorId=` | GET | Auth | 불가일정 조회 |
 | `/api/unavailable` | POST | 본인/ADMIN | performanceDateIds 배열 → 기존 대비 diff 트랜잭션 |
 | `/api/casting` | POST | ADMIN | 단건 배정. 배우 roleType + 불가일정 검증 후 upsert. 검증 쿼리 3개 `Promise.all` 병렬 |
-| `/api/casting/batch` | POST | ADMIN | 일괄 배정. 필요 데이터 한번에 조회 → Map 검증 → 단일 트랜잭션 |
+| `/api/casting/batch` | POST | ADMIN | 일괄 배정 (reservationName/reservationContact 메모 포함). 필요 데이터 한번에 조회 → Map 검증 → 단일 트랜잭션 |
+| `/api/casting/reservations` | POST | API Key | 예약자 메모 자동 등록. n8n → 크롤러 → 이 API. Bearer 토큰 인증 |
+| `/api/casting/notify` | POST | ADMIN | 캐스팅 알림 발송 |
 | `/api/actors`, `/api/actors/[id]` | GET/POST/PUT/DELETE | Auth/ADMIN | 배우 CRUD |
 | `/api/actors/[id]/link` | POST | ADMIN | User ↔ Actor 연결 |
+| `/api/actors/calendars` | GET | ADMIN | 배우 캘린더 목록 |
+| `/api/actor-override` | POST | ADMIN | 월별 배우 비활성화 |
 | `/api/calendar/sync` | POST | ADMIN | synced=false인 항목 Google Calendar 동기화 |
+| `/api/cron/cleanup-memos` | GET | CRON_SECRET | 어제 이전 공연 예약 메모 자동 삭제 + 캘린더 description 제거 |
+
+### 예약 메모 자동화 흐름
+
+```
+n8n (매일 01:00 KST)
+  → POST 크롤러/send-all-notifications (네이버 예약 크롤링 + 알림톡)
+    → GET 크롤러/bookings/today (예약 데이터 조회)
+      → POST schedule.mysterydam.com/api/casting/reservations (메모 등록 + 캘린더 description)
+
+Vercel Cron (매일 03:00 UTC = 12:00 KST)
+  → GET /api/cron/cleanup-memos (과거 공연 메모 삭제)
+```
+
+- 크롤러: NAS(192.168.219.187:8080) Docker 컨테이너
+- Casting 모델의 `reservationName`, `reservationContact` 필드에 저장
+- MALE_LEAD 캐스팅에만 예약 메모 연결
 
 ### 컴포넌트 구조
 
@@ -130,7 +153,9 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 
 - 불가일정 → 배우 개인 캘린더(`Actor.calendarId`)에 종일 이벤트 (빨강 colorId:11)
 - 배정 → 역할별 캘린더(`CALENDAR_MALE_LEAD`/`CALENDAR_FEMALE_LEAD`)에 시간 이벤트 (파랑:9 / 보라:6)
+- 예약 메모 → 캘린더 이벤트 description에 "예약자: OOO\n연락처: 010..." 형식
 - `synced` + `calendarEventId` 필드로 동기화 상태 추적
+- `updateEventDescription()` — 기존 이벤트의 description만 patch
 - `/api/calendar/sync`에서 관리자 수동 트리거
 
 ## 환경변수
@@ -146,3 +171,5 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` — Calendar API
 - `CALENDAR_MALE_LEAD`, `CALENDAR_FEMALE_LEAD` — 역할 캘린더 ID
+- `RESERVATION_API_KEY` — 크롤러→schedule 예약 API 인증
+- `CRON_SECRET` — Vercel Cron 인증
