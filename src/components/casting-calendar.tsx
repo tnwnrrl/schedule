@@ -189,8 +189,12 @@ export function CastingCalendar() {
       const result = await res.json();
       if (!res.ok) {
         toast.error(result.error || "알림 발송 실패");
-      } else {
+      } else if (result.sent > 0 && result.skipped === 0 && result.failed === 0) {
         toast.success(result.message);
+      } else if (result.sent === 0 && result.skipped > 0) {
+        toast.warning(result.message);
+      } else {
+        toast.info(result.message);
       }
     } catch {
       toast.error("알림 발송 실패");

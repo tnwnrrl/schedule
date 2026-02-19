@@ -39,12 +39,15 @@ export async function POST(req: NextRequest) {
   }
 
   let sent = 0;
+  let skipped = 0;
   let failed = 0;
+  const noEmailActors: string[] = [];
 
   for (const casting of castings) {
     const actorEmail = casting.actor.user?.email || null;
     if (!actorEmail) {
-      failed++;
+      skipped++;
+      noEmailActors.push(casting.actor.name);
       continue;
     }
 
@@ -87,9 +90,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // 메시지 구성
+  const parts: string[] = [];
+  if (sent > 0) parts.push(`${sent}건 발송 완료`);
+  if (skipped > 0) {
+    const uniqueNames = [...new Set(noEmailActors)];
+    parts.push(`${uniqueNames.join(", ")} 계정 미연결`);
+  }
+  if (failed > 0) parts.push(`${failed}건 발송 실패`);
+  const message = parts.join(", ") || "발송 대상 없음";
+
   return NextResponse.json({
-    message: `알림 발송: ${sent}건 성공, ${failed}건 실패`,
+    message,
     sent,
+    skipped,
     failed,
   });
 }
