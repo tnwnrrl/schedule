@@ -244,7 +244,7 @@ export function ActorManager({
       if (!res.ok) {
         toast.error(result.error || "캘린더 설정 실패");
       } else if (result.errors?.length) {
-        toast.warning(result.message);
+        toast.warning(`${result.message}\n${result.errors.join("\n")}`, { duration: 10000 });
       } else {
         toast.success(result.message);
       }

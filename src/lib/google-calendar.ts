@@ -162,19 +162,14 @@ export async function updateCastingEvent(
 export async function createActorCalendar(
   actorName: string
 ): Promise<string | null> {
-  try {
-    const calendar = getCalendar();
-    const res = await calendar.calendars.insert({
-      requestBody: {
-        summary: `공연 스케줄 - ${actorName}`,
-        timeZone: "Asia/Seoul",
-      },
-    });
-    return res.data.id || null;
-  } catch (error) {
-    console.error("배우 캘린더 생성 실패:", error);
-    return null;
-  }
+  const calendar = getCalendar();
+  const res = await calendar.calendars.insert({
+    requestBody: {
+      summary: `공연 스케줄 - ${actorName}`,
+      timeZone: "Asia/Seoul",
+    },
+  });
+  return res.data.id || null;
 }
 
 // 캘린더를 특정 이메일과 공유

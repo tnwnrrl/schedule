@@ -36,9 +36,16 @@ export async function POST() {
     }
 
     // 캘린더 생성
-    const calendarId = await createActorCalendar(actor.name);
+    let calendarId: string | null = null;
+    try {
+      calendarId = await createActorCalendar(actor.name);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${actor.name}: ${msg}`);
+      continue;
+    }
     if (!calendarId) {
-      errors.push(`${actor.name}: 캘린더 생성 실패`);
+      errors.push(`${actor.name}: 캘린더 생성 실패 (null 반환)`);
       continue;
     }
 
