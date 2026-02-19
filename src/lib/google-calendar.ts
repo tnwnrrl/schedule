@@ -7,8 +7,8 @@ let cachedAuth: JWT | null = null;
 function getAuth() {
   if (cachedAuth) return cachedAuth;
 
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL?.trim();
+  const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.trim().replace(
     /\\n/g,
     "\n"
   );
