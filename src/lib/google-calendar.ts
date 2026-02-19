@@ -117,8 +117,10 @@ export async function createCastingEvent(
       },
     });
     return res.data.id || null;
-  } catch (error) {
-    console.error("배역 캘린더 이벤트 생성 실패:", error);
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errDetail = (error as { response?: { data?: unknown } })?.response?.data;
+    console.error("배역 캘린더 이벤트 생성 실패:", errMsg, errDetail ? JSON.stringify(errDetail) : "");
     return null;
   }
 }

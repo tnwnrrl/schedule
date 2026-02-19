@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
   let failed = 0;
   const noEmailActors: string[] = [];
+  const errors: string[] = [];
 
   for (const casting of castings) {
     const actorEmail = casting.actor.user?.email || null;
@@ -82,10 +83,16 @@ export async function POST(req: NextRequest) {
         });
         sent++;
       } else {
+        const calId = casting.roleType === "MALE_LEAD"
+          ? process.env.CALENDAR_MALE_LEAD
+          : process.env.CALENDAR_FEMALE_LEAD;
+        const hasSA = !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+        errors.push(`${casting.actor.name}: calendarId=${calId ? "OK" : "MISSING"}, SA=${hasSA ? "OK" : "MISSING"}`);
         failed++;
       }
     } catch (e) {
-      console.error(`알림 재발송 실패 (casting: ${casting.id}):`, e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      errors.push(`${casting.actor.name}: ${errMsg}`);
       failed++;
     }
   }
@@ -105,5 +112,6 @@ export async function POST(req: NextRequest) {
     sent,
     skipped,
     failed,
+    ...(errors.length > 0 && { errors }),
   });
 }
