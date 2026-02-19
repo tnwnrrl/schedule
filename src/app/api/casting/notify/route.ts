@@ -56,9 +56,10 @@ export async function POST(req: NextRequest) {
       // 기존 이벤트 삭제
       if (casting.calendarEventId) {
         const calendarId =
-          casting.roleType === "MALE_LEAD"
+          casting.actor.calendarId ||
+          (casting.roleType === "MALE_LEAD"
             ? process.env.CALENDAR_MALE_LEAD
-            : process.env.CALENDAR_FEMALE_LEAD;
+            : process.env.CALENDAR_FEMALE_LEAD);
         if (calendarId) {
           await deleteCalendarEvent(calendarId, casting.calendarEventId, false);
         }
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
         casting.performanceDate.startTime,
         casting.performanceDate.endTime,
         casting.performanceDate.label,
-        actorEmail
+        actorEmail,
+        casting.actor.calendarId
       );
 
       if (eventId) {

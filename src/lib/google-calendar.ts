@@ -73,7 +73,7 @@ export async function deleteCalendarEvent(
   }
 }
 
-// 배역 배정 → 역할 캘린더에 이벤트 생성 (attendees로 배우에게 초대 알림)
+// 배역 배정 → 캘린더에 이벤트 생성 (배우 개인 캘린더 우선, 없으면 역할 캘린더)
 export async function createCastingEvent(
   roleType: string,
   actorName: string,
@@ -81,12 +81,15 @@ export async function createCastingEvent(
   startTime: string,
   endTime?: string | null,
   label?: string | null,
-  actorEmail?: string | null
+  actorEmail?: string | null,
+  actorCalendarId?: string | null
 ): Promise<string | null> {
+  // 배우 개인 캘린더 → 역할별 캘린더 → 없으면 실패
   const calendarId =
-    roleType === "MALE_LEAD"
+    actorCalendarId ||
+    (roleType === "MALE_LEAD"
       ? process.env.CALENDAR_MALE_LEAD
-      : process.env.CALENDAR_FEMALE_LEAD;
+      : process.env.CALENDAR_FEMALE_LEAD);
 
   if (!calendarId) {
     console.error(`캘린더 ID가 설정되지 않았습니다: ${roleType}`);
@@ -151,6 +154,47 @@ export async function updateCastingEvent(
     return true;
   } catch (error) {
     console.error("배역 캘린더 이벤트 업데이트 실패:", error);
+    return false;
+  }
+}
+
+// 배우 개인 캘린더 생성
+export async function createActorCalendar(
+  actorName: string
+): Promise<string | null> {
+  try {
+    const calendar = getCalendar();
+    const res = await calendar.calendars.insert({
+      requestBody: {
+        summary: `공연 스케줄 - ${actorName}`,
+        timeZone: "Asia/Seoul",
+      },
+    });
+    return res.data.id || null;
+  } catch (error) {
+    console.error("배우 캘린더 생성 실패:", error);
+    return null;
+  }
+}
+
+// 캘린더를 특정 이메일과 공유
+export async function shareCalendarWithEmail(
+  calendarId: string,
+  email: string,
+  role: "reader" | "writer" = "reader"
+): Promise<boolean> {
+  try {
+    const calendar = getCalendar();
+    await calendar.acl.insert({
+      calendarId,
+      requestBody: {
+        role,
+        scope: { type: "user", value: email },
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error("캘린더 공유 실패:", error);
     return false;
   }
 }

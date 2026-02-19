@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       : Promise.resolve([]),
     prisma.casting.findMany({
       where: { performanceDateId: { in: perfDateIds } },
-      select: { performanceDateId: true, roleType: true, calendarEventId: true },
+      select: { performanceDateId: true, roleType: true, calendarEventId: true, actorId: true },
     }),
   ]);
 
@@ -58,14 +58,14 @@ export async function POST(req: NextRequest) {
     unavailables.map((u) => `${u.actorId}_${u.performanceDateId}`)
   );
   const existingCastingMap = new Map(
-    existingCastings.map((c) => [`${c.performanceDateId}_${c.roleType}`, c.calendarEventId])
+    existingCastings.map((c) => [`${c.performanceDateId}_${c.roleType}`, { calendarEventId: c.calendarEventId, actorId: c.actorId }])
   );
 
   // 트랜잭션으로 일괄 처리
   const operations = [];
   // 캘린더 동기화 대상 추적
   const syncTargets: Array<{ performanceDateId: string; roleType: string; actorId: string }> = [];
-  const deleteTargets: Array<{ roleType: string; calendarEventId: string }> = [];
+  const deleteTargets: Array<{ roleType: string; calendarEventId: string; actorId?: string }> = [];
 
   for (const change of changes) {
     const key = `${change.performanceDateId}_${change.roleType}`;
@@ -81,9 +81,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 기존 캘린더 이벤트 삭제 대상 추적
-    const existingEventId = existingCastingMap.get(key);
-    if (existingEventId) {
-      deleteTargets.push({ roleType: change.roleType, calendarEventId: existingEventId });
+    const existing = existingCastingMap.get(key);
+    if (existing?.calendarEventId) {
+      deleteTargets.push({ roleType: change.roleType, calendarEventId: existing.calendarEventId, actorId: existing.actorId });
     }
 
     // 배정 해제
@@ -150,10 +150,12 @@ export async function POST(req: NextRequest) {
   try {
     // 기존 이벤트 삭제 (취소 알림)
     for (const dt of deleteTargets) {
+      const dtActor = dt.actorId ? actorMap.get(dt.actorId) : null;
       const calId =
-        dt.roleType === "MALE_LEAD"
+        dtActor?.calendarId ||
+        (dt.roleType === "MALE_LEAD"
           ? process.env.CALENDAR_MALE_LEAD
-          : process.env.CALENDAR_FEMALE_LEAD;
+          : process.env.CALENDAR_FEMALE_LEAD);
       if (calId) {
         await deleteCalendarEvent(calId, dt.calendarEventId, true).catch(() => {});
       }
@@ -174,7 +176,8 @@ export async function POST(req: NextRequest) {
         perfDate.startTime,
         perfDate.endTime,
         perfDate.label,
-        actorEmail
+        actorEmail,
+        actor.calendarId
       );
       if (eventId) {
         await prisma.casting.update({

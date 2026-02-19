@@ -53,12 +53,14 @@ export async function POST(req: NextRequest) {
     // 기존 캘린더 이벤트 삭제 (취소 알림 발송)
     const existing = await prisma.casting.findUnique({
       where: { performanceDateId_roleType: { performanceDateId, roleType } },
+      include: { actor: { select: { calendarId: true } } },
     });
     if (existing?.calendarEventId) {
       const calendarId =
-        roleType === "MALE_LEAD"
+        existing.actor.calendarId ||
+        (roleType === "MALE_LEAD"
           ? process.env.CALENDAR_MALE_LEAD
-          : process.env.CALENDAR_FEMALE_LEAD;
+          : process.env.CALENDAR_FEMALE_LEAD);
       if (calendarId) {
         try {
           await deleteCalendarEvent(calendarId, existing.calendarEventId, true);
@@ -109,12 +111,14 @@ export async function POST(req: NextRequest) {
   // 기존 배정의 캘린더 이벤트 삭제 (배우 변경 시 취소 알림)
   const existingCasting = await prisma.casting.findUnique({
     where: { performanceDateId_roleType: { performanceDateId, roleType } },
+    include: { actor: { select: { calendarId: true } } },
   });
   if (existingCasting?.calendarEventId) {
     const calId =
-      roleType === "MALE_LEAD"
+      existingCasting.actor.calendarId ||
+      (roleType === "MALE_LEAD"
         ? process.env.CALENDAR_MALE_LEAD
-        : process.env.CALENDAR_FEMALE_LEAD;
+        : process.env.CALENDAR_FEMALE_LEAD);
     if (calId) {
       try {
         await deleteCalendarEvent(calId, existingCasting.calendarEventId, true);
@@ -156,7 +160,8 @@ export async function POST(req: NextRequest) {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      actorEmail
+      actorEmail,
+      actor!.calendarId
     );
     if (eventId) {
       await prisma.casting.update({

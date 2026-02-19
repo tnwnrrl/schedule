@@ -58,9 +58,10 @@ export async function POST() {
     // 기존 이벤트가 있으면 삭제 (취소 알림 발송)
     if (casting.calendarEventId) {
       const calendarId =
-        casting.roleType === "MALE_LEAD"
+        casting.actor.calendarId ||
+        (casting.roleType === "MALE_LEAD"
           ? process.env.CALENDAR_MALE_LEAD
-          : process.env.CALENDAR_FEMALE_LEAD;
+          : process.env.CALENDAR_FEMALE_LEAD);
       if (calendarId) {
         await deleteCalendarEvent(calendarId, casting.calendarEventId, true);
       }
@@ -74,7 +75,8 @@ export async function POST() {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      actorEmail
+      actorEmail,
+      casting.actor.calendarId
     );
 
     if (eventId) {

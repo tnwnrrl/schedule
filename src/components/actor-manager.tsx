@@ -32,7 +32,7 @@ import { ROLE_TYPE_LABEL } from "@/types";
 import type { RoleType } from "@/types";
 import { SHOW_TIME_LABELS } from "@/lib/constants";
 import type { ShowTime } from "@/lib/constants";
-import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ActorData {
@@ -79,6 +79,7 @@ export function ActorManager({
   const [perfIdToInfo, setPerfIdToInfo] = useState<Record<string, { date: string; startTime: string }>>({});
   const [unavailableRaw, setUnavailableRaw] = useState<Record<string, string[]>>({});
   const [detailActor, setDetailActor] = useState<ActorData | null>(null);
+  const [calendarSetup, setCalendarSetup] = useState(false);
 
   const fetchMonthlyData = useCallback(async (y: number, m: number) => {
     setMonthlyLoading(true);
@@ -234,6 +235,27 @@ export function ActorManager({
     });
   };
 
+  const handleCalendarSetup = async () => {
+    if (!confirm("모든 배우의 개인 캘린더를 생성하고 공유하시겠습니까?")) return;
+    setCalendarSetup(true);
+    try {
+      const res = await fetch("/api/actors/calendars", { method: "POST" });
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "캘린더 설정 실패");
+      } else if (result.errors?.length) {
+        toast.warning(result.message);
+      } else {
+        toast.success(result.message);
+      }
+      router.refresh();
+    } catch {
+      toast.error("캘린더 설정 실패");
+    } finally {
+      setCalendarSetup(false);
+    }
+  };
+
   const maleActors = actors.filter((a) => a.roleType === "MALE_LEAD");
   const femaleActors = actors.filter((a) => a.roleType === "FEMALE_LEAD");
 
@@ -257,7 +279,15 @@ export function ActorManager({
         </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          onClick={handleCalendarSetup}
+          disabled={calendarSetup}
+        >
+          <Calendar className="mr-2 h-4 w-4" />
+          {calendarSetup ? "설정 중..." : "캘린더 일괄 생성"}
+        </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={openAddDialog}>
@@ -335,6 +365,7 @@ export function ActorManager({
               <TableRow>
                 <TableHead>이름</TableHead>
                 <TableHead>연결된 계정</TableHead>
+                <TableHead className="text-center">캘린더</TableHead>
                 <TableHead className="text-center">배정</TableHead>
                 <TableHead className="text-center">
                   불가 ({filterMonth}월)
@@ -373,6 +404,13 @@ export function ActorManager({
                     )}
                   </TableCell>
                   <TableCell className="text-center">
+                    {actor.calendarId ? (
+                      <Badge variant="secondary" className="text-xs">연결됨</Badge>
+                    ) : (
+                      <span className="text-xs text-gray-400">없음</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center">
                     {actor.castingCount}
                   </TableCell>
                   <TableCell className="text-center">
@@ -408,7 +446,7 @@ export function ActorManager({
               {group.actors.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="text-center text-gray-500"
                   >
                     등록된 배우가 없습니다
