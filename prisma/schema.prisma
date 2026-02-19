@@ -98,16 +98,18 @@ model UnavailableDate {
 }
 
 model Casting {
-  id                String          @id @default(cuid())
-  performanceDateId String
-  actorId           String
-  roleType          String
-  synced            Boolean         @default(false)
-  calendarEventId   String?
-  performanceDate   PerformanceDate @relation(fields: [performanceDateId], references: [id], onDelete: Cascade)
-  actor             Actor           @relation(fields: [actorId], references: [id], onDelete: Cascade)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  performanceDateId  String
+  actorId            String
+  roleType           String
+  synced             Boolean         @default(false)
+  calendarEventId    String?
+  reservationName    String?
+  reservationContact String?
+  performanceDate    PerformanceDate @relation(fields: [performanceDateId], references: [id], onDelete: Cascade)
+  actor              Actor           @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@unique([performanceDateId, roleType])
   @@index([performanceDateId])

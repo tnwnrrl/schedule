@@ -5,8 +5,12 @@ import type { NextRequest } from "next/server";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Static/API auth routes → always pass through
-  if (pathname.startsWith("/api/auth")) {
+  // Public API routes → pass through (자체 인증 사용)
+  if (
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/casting/reservations") ||
+    pathname.startsWith("/api/cron/")
+  ) {
     return NextResponse.next();
   }
 

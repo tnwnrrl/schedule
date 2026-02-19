@@ -81,7 +81,8 @@ export async function createCastingEvent(
   startTime: string,
   endTime?: string | null,
   label?: string | null,
-  actorCalendarId?: string | null
+  actorCalendarId?: string | null,
+  description?: string | null
 ): Promise<string | null> {
   // 배우 개인 캘린더 → 역할별 캘린더 → 없으면 실패
   const calendarId =
@@ -104,14 +105,19 @@ export async function createCastingEvent(
     ? `${date}T${endTime}:00`
     : `${date}T${addHours(startTime, 2)}:00`;
 
+  const requestBody: Record<string, unknown> = {
+    summary,
+    start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
+    end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
+    colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
+  };
+  if (description) {
+    requestBody.description = description;
+  }
+
   const res = await calendar.events.insert({
     calendarId,
-    requestBody: {
-      summary,
-      start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
-      end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
-      colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
-    },
+    requestBody,
   });
   return res.data.id || null;
 }
@@ -142,6 +148,28 @@ export async function updateCastingEvent(
     return true;
   } catch (error) {
     console.error("배역 캘린더 이벤트 업데이트 실패:", error);
+    return false;
+  }
+}
+
+// 캘린더 이벤트 description 업데이트
+export async function updateEventDescription(
+  calendarId: string,
+  eventId: string,
+  description: string | null
+): Promise<boolean> {
+  try {
+    const calendar = getCalendar();
+    await calendar.events.patch({
+      calendarId,
+      eventId,
+      requestBody: {
+        description: description || "",
+      },
+    });
+    return true;
+  } catch (error) {
+    console.error("캘린더 이벤트 description 업데이트 실패:", error);
     return false;
   }
 }

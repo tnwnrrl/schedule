@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,8 @@ interface CastingInfo {
   actorId: string;
   actorName: string;
   synced: boolean;
+  reservationName?: string | null;
+  reservationContact?: string | null;
 }
 
 interface ScheduleData {
@@ -58,6 +61,7 @@ export function CastingCalendar() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dialogCastings, setDialogCastings] = useState<Record<string, string>>({});
+  const [dialogMemos, setDialogMemos] = useState<Record<string, { name: string; contact: string }>>({});
   const [saving, setSaving] = useState(false);
   const [notifying, setNotifying] = useState(false);
   const dialogCloseRef = useRef(0);
@@ -97,14 +101,22 @@ export function CastingCalendar() {
     // 현재 배정 상태를 dialog state에 복사
     const perfs = data.performances[dateStr];
     const initial: Record<string, string> = {};
+    const initialMemos: Record<string, { name: string; contact: string }> = {};
     for (const p of perfs) {
       for (const roleType of ["MALE_LEAD", "FEMALE_LEAD"]) {
         const key = `${p.id}_${roleType}`;
         const casting = data.castings[key];
         initial[key] = casting?.actorId || "";
+        if (roleType === "MALE_LEAD") {
+          initialMemos[p.id] = {
+            name: casting?.reservationName || "",
+            contact: casting?.reservationContact || "",
+          };
+        }
       }
     }
     setDialogCastings(initial);
+    setDialogMemos(initialMemos);
   };
 
   const handleSave = async () => {
@@ -112,7 +124,13 @@ export function CastingCalendar() {
     setSaving(true);
 
     const perfs = data.performances[selectedDate];
-    const changes: Array<{ performanceDateId: string; roleType: string; actorId: string | null }> = [];
+    const changes: Array<{
+      performanceDateId: string;
+      roleType: string;
+      actorId: string | null;
+      reservationName?: string | null;
+      reservationContact?: string | null;
+    }> = [];
 
     for (const p of perfs) {
       for (const roleType of ["MALE_LEAD", "FEMALE_LEAD"]) {
@@ -120,8 +138,31 @@ export function CastingCalendar() {
         const raw = dialogCastings[key];
         const newActorId = raw && raw !== "__none__" ? raw : null;
         const oldActorId = data.castings[key]?.actorId || null;
-        if (newActorId !== oldActorId) {
-          changes.push({ performanceDateId: p.id, roleType, actorId: newActorId });
+        const casting = data.castings[key];
+
+        // MALE_LEAD 메모 변경 확인
+        let memoChanged = false;
+        let memoData: { reservationName?: string | null; reservationContact?: string | null } = {};
+        if (roleType === "MALE_LEAD") {
+          const memo = dialogMemos[p.id];
+          const oldName = casting?.reservationName || "";
+          const oldContact = casting?.reservationContact || "";
+          if (memo && (memo.name !== oldName || memo.contact !== oldContact)) {
+            memoChanged = true;
+            memoData = {
+              reservationName: memo.name || null,
+              reservationContact: memo.contact || null,
+            };
+          }
+        }
+
+        if (newActorId !== oldActorId || memoChanged) {
+          changes.push({
+            performanceDateId: p.id,
+            roleType,
+            actorId: newActorId ?? oldActorId,
+            ...memoData,
+          });
         }
       }
     }
@@ -339,36 +380,70 @@ export function CastingCalendar() {
                     const currentValue = dialogCastings[key] || "";
 
                     return (
-                      <div key={roleType} className="flex items-center gap-2">
-                        <span className={cn(
-                          "w-8 text-xs font-medium",
-                          roleType === "MALE_LEAD" ? "text-blue-700" : "text-pink-700"
-                        )}>
-                          {ROLE_TYPE_LABEL[roleType]}
-                        </span>
-                        <Select
-                          value={currentValue}
-                          onValueChange={(v) =>
-                            setDialogCastings((prev) => ({ ...prev, [key]: v }))
-                          }
-                        >
-                          <SelectTrigger className="flex-1 h-8 text-xs">
-                            <SelectValue placeholder="미배정" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__">
-                              <span className="text-gray-400">미배정</span>
-                            </SelectItem>
-                            {available.map((actor) => (
-                              <SelectItem key={actor.id} value={actor.id}>
-                                {actor.name}
-                                <span className="ml-1 text-gray-400">
-                                  ({getActorCastingCount(actor.id)}회)
-                                </span>
+                      <div key={roleType} className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "w-8 text-xs font-medium",
+                            roleType === "MALE_LEAD" ? "text-blue-700" : "text-pink-700"
+                          )}>
+                            {ROLE_TYPE_LABEL[roleType]}
+                          </span>
+                          <Select
+                            value={currentValue}
+                            onValueChange={(v) =>
+                              setDialogCastings((prev) => ({ ...prev, [key]: v }))
+                            }
+                          >
+                            <SelectTrigger className="flex-1 h-8 text-xs">
+                              <SelectValue placeholder="미배정" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">
+                                <span className="text-gray-400">미배정</span>
                               </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                              {available.map((actor) => (
+                                <SelectItem key={actor.id} value={actor.id}>
+                                  {actor.name}
+                                  <span className="ml-1 text-gray-400">
+                                    ({getActorCastingCount(actor.id)}회)
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {roleType === "MALE_LEAD" && (
+                          <div className="ml-10 flex items-center gap-1.5">
+                            <Input
+                              placeholder="예약자명"
+                              value={dialogMemos[perf.id]?.name || ""}
+                              onChange={(e) =>
+                                setDialogMemos((prev) => ({
+                                  ...prev,
+                                  [perf.id]: {
+                                    ...prev[perf.id],
+                                    name: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="h-7 text-xs flex-1"
+                            />
+                            <Input
+                              placeholder="연락처"
+                              value={dialogMemos[perf.id]?.contact || ""}
+                              onChange={(e) =>
+                                setDialogMemos((prev) => ({
+                                  ...prev,
+                                  [perf.id]: {
+                                    ...prev[perf.id],
+                                    contact: e.target.value,
+                                  },
+                                }))
+                              }
+                              className="h-7 text-xs flex-1"
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}

@@ -10,6 +10,8 @@ interface CastingChange {
   performanceDateId: string;
   roleType: string;
   actorId: string | null;
+  reservationName?: string | null;
+  reservationContact?: string | null;
 }
 
 // POST /api/casting/batch - 배역 배정 일괄 처리 (관리자 전용)
@@ -117,6 +119,14 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    const memoData: Record<string, string | null> = {};
+    if (change.reservationName !== undefined) {
+      memoData.reservationName = change.reservationName ?? null;
+    }
+    if (change.reservationContact !== undefined) {
+      memoData.reservationContact = change.reservationContact ?? null;
+    }
+
     operations.push(
       prisma.casting.upsert({
         where: {
@@ -125,12 +135,13 @@ export async function POST(req: NextRequest) {
             roleType: change.roleType,
           },
         },
-        update: { actorId: change.actorId, synced: false },
+        update: { actorId: change.actorId, synced: false, ...memoData },
         create: {
           performanceDateId: change.performanceDateId,
           actorId: change.actorId,
           roleType: change.roleType,
           synced: false,
+          ...memoData,
         },
       })
     );
