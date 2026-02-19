@@ -105,17 +105,13 @@ export async function createCastingEvent(
     ? `${date}T${endTime}:00`
     : `${date}T${addHours(startTime, 2)}:00`;
 
-  const attendees = actorEmail ? [{ email: actorEmail }] : undefined;
-
   const res = await calendar.events.insert({
     calendarId,
-    sendUpdates: actorEmail ? "all" : "none",
     requestBody: {
       summary,
       start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
       end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
       colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
-      attendees,
     },
   });
   return res.data.id || null;
