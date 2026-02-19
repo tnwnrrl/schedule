@@ -47,7 +47,7 @@ export async function POST() {
   const unsyncedCastings = await prisma.casting.findMany({
     where: { synced: false },
     include: {
-      actor: true,
+      actor: { include: { user: true } },
       performanceDate: true,
     },
   });
@@ -55,24 +55,26 @@ export async function POST() {
   for (const casting of unsyncedCastings) {
     const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
 
-    // 기존 이벤트가 있으면 삭제
+    // 기존 이벤트가 있으면 삭제 (취소 알림 발송)
     if (casting.calendarEventId) {
       const calendarId =
         casting.roleType === "MALE_LEAD"
           ? process.env.CALENDAR_MALE_LEAD
           : process.env.CALENDAR_FEMALE_LEAD;
       if (calendarId) {
-        await deleteCalendarEvent(calendarId, casting.calendarEventId);
+        await deleteCalendarEvent(calendarId, casting.calendarEventId, true);
       }
     }
 
+    const actorEmail = casting.actor.user?.email || null;
     const eventId = await createCastingEvent(
       casting.roleType,
       casting.actor.name,
       dateStr,
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
-      casting.performanceDate.label
+      casting.performanceDate.label,
+      actorEmail
     );
 
     if (eventId) {

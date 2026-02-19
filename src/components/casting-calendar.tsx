@@ -35,9 +35,16 @@ interface Actor {
   roleType: string;
 }
 
+interface CastingInfo {
+  castingId: string;
+  actorId: string;
+  actorName: string;
+  synced: boolean;
+}
+
 interface ScheduleData {
   performances: Record<string, Performance[]>;
-  castings: Record<string, { actorId: string; actorName: string }>;
+  castings: Record<string, CastingInfo>;
   unavailable: Record<string, string[]>;
   actors: Actor[];
   overriddenActors?: string[];
@@ -52,6 +59,7 @@ export function CastingCalendar() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [dialogCastings, setDialogCastings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [notifying, setNotifying] = useState(false);
   const dialogCloseRef = useRef(0);
 
   const fetchData = useCallback(async (y: number, m: number) => {
@@ -148,6 +156,46 @@ export function CastingCalendar() {
       toast.error("저장 실패");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleNotify = async () => {
+    if (!data || !selectedDate) return;
+
+    const perfs = data.performances[selectedDate];
+    const castingIds: string[] = [];
+    for (const p of perfs) {
+      for (const roleType of ["MALE_LEAD", "FEMALE_LEAD"]) {
+        const key = `${p.id}_${roleType}`;
+        const casting = data.castings[key];
+        if (casting?.castingId) {
+          castingIds.push(casting.castingId);
+        }
+      }
+    }
+
+    if (castingIds.length === 0) {
+      toast.error("배정된 캐스팅이 없습니다");
+      return;
+    }
+
+    setNotifying(true);
+    try {
+      const res = await fetch("/api/casting/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ castingIds }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "알림 발송 실패");
+      } else {
+        toast.success(result.message);
+      }
+    } catch {
+      toast.error("알림 발송 실패");
+    } finally {
+      setNotifying(false);
     }
   };
 
@@ -325,7 +373,16 @@ export function CastingCalendar() {
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleNotify}
+              disabled={notifying || saving}
+              className="sm:mr-auto text-xs"
+            >
+              {notifying ? "발송 중..." : "알림 재발송"}
+            </Button>
             <Button variant="outline" onClick={() => setSelectedDate(null)}>
               취소
             </Button>

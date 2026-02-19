@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  createCastingEvent,
+  deleteCalendarEvent,
+} from "@/lib/google-calendar";
 
 interface CastingChange {
   performanceDateId: string;
@@ -31,9 +35,9 @@ export async function POST(req: NextRequest) {
   const actorIds = [...new Set(changes.filter((c) => c.actorId).map((c) => c.actorId!))];
   const perfDateIds = [...new Set(changes.map((c) => c.performanceDateId))];
 
-  const [actors, perfDates, unavailables] = await Promise.all([
+  const [actors, perfDates, unavailables, existingCastings] = await Promise.all([
     actorIds.length > 0
-      ? prisma.actor.findMany({ where: { id: { in: actorIds } } })
+      ? prisma.actor.findMany({ where: { id: { in: actorIds } }, include: { user: true } })
       : Promise.resolve([]),
     prisma.performanceDate.findMany({ where: { id: { in: perfDateIds } } }),
     actorIds.length > 0
@@ -41,16 +45,27 @@ export async function POST(req: NextRequest) {
           where: { actorId: { in: actorIds }, performanceDateId: { in: perfDateIds } },
         })
       : Promise.resolve([]),
+    prisma.casting.findMany({
+      where: { performanceDateId: { in: perfDateIds } },
+      select: { performanceDateId: true, roleType: true, calendarEventId: true },
+    }),
   ]);
 
   const actorMap = new Map(actors.map((a) => [a.id, a]));
+  const perfDateMap = new Map(perfDates.map((p) => [p.id, p]));
   const perfDateSet = new Set(perfDates.map((p) => p.id));
   const unavailableSet = new Set(
     unavailables.map((u) => `${u.actorId}_${u.performanceDateId}`)
   );
+  const existingCastingMap = new Map(
+    existingCastings.map((c) => [`${c.performanceDateId}_${c.roleType}`, c.calendarEventId])
+  );
 
   // 트랜잭션으로 일괄 처리
   const operations = [];
+  // 캘린더 동기화 대상 추적
+  const syncTargets: Array<{ performanceDateId: string; roleType: string; actorId: string }> = [];
+  const deleteTargets: Array<{ roleType: string; calendarEventId: string }> = [];
 
   for (const change of changes) {
     const key = `${change.performanceDateId}_${change.roleType}`;
@@ -63,6 +78,12 @@ export async function POST(req: NextRequest) {
     if (!perfDateSet.has(change.performanceDateId)) {
       results.push({ key, success: false, error: "공연일 없음" });
       continue;
+    }
+
+    // 기존 캘린더 이벤트 삭제 대상 추적
+    const existingEventId = existingCastingMap.get(key);
+    if (existingEventId) {
+      deleteTargets.push({ roleType: change.roleType, calendarEventId: existingEventId });
     }
 
     // 배정 해제
@@ -113,11 +134,62 @@ export async function POST(req: NextRequest) {
         },
       })
     );
+    syncTargets.push({
+      performanceDateId: change.performanceDateId,
+      roleType: change.roleType,
+      actorId: change.actorId,
+    });
     results.push({ key, success: true });
   }
 
   if (operations.length > 0) {
     await prisma.$transaction(operations);
+  }
+
+  // 캘린더 자동 동기화 (실패해도 배정 응답에 영향 없음)
+  try {
+    // 기존 이벤트 삭제 (취소 알림)
+    for (const dt of deleteTargets) {
+      const calId =
+        dt.roleType === "MALE_LEAD"
+          ? process.env.CALENDAR_MALE_LEAD
+          : process.env.CALENDAR_FEMALE_LEAD;
+      if (calId) {
+        await deleteCalendarEvent(calId, dt.calendarEventId, true).catch(() => {});
+      }
+    }
+
+    // 새 이벤트 생성 (초대 알림)
+    for (const st of syncTargets) {
+      const perfDate = perfDateMap.get(st.performanceDateId);
+      const actor = actorMap.get(st.actorId);
+      if (!perfDate || !actor) continue;
+
+      const dateStr = perfDate.date.toISOString().split("T")[0];
+      const actorEmail = actor.user?.email || null;
+      const eventId = await createCastingEvent(
+        st.roleType,
+        actor.name,
+        dateStr,
+        perfDate.startTime,
+        perfDate.endTime,
+        perfDate.label,
+        actorEmail
+      );
+      if (eventId) {
+        await prisma.casting.update({
+          where: {
+            performanceDateId_roleType: {
+              performanceDateId: st.performanceDateId,
+              roleType: st.roleType,
+            },
+          },
+          data: { synced: true, calendarEventId: eventId },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("배치 배정 후 캘린더 자동 동기화 실패:", e);
   }
 
   const successCount = results.filter((r) => r.success).length;

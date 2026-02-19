@@ -53,16 +53,18 @@ export async function createUnavailableEvent(
   }
 }
 
-// 불가일정 이벤트 삭제
+// 캘린더 이벤트 삭제 (sendNotifications으로 참석자에게 취소 알림)
 export async function deleteCalendarEvent(
   calendarId: string,
-  eventId: string
+  eventId: string,
+  sendNotifications: boolean = false
 ): Promise<boolean> {
   try {
     const calendar = getCalendar();
     await calendar.events.delete({
       calendarId,
       eventId,
+      sendUpdates: sendNotifications ? "all" : "none",
     });
     return true;
   } catch (error) {
@@ -71,14 +73,15 @@ export async function deleteCalendarEvent(
   }
 }
 
-// 배역 배정 → 역할 캘린더에 이벤트 생성
+// 배역 배정 → 역할 캘린더에 이벤트 생성 (attendees로 배우에게 초대 알림)
 export async function createCastingEvent(
   roleType: string,
   actorName: string,
   date: string,
   startTime: string,
   endTime?: string | null,
-  label?: string | null
+  label?: string | null,
+  actorEmail?: string | null
 ): Promise<string | null> {
   const calendarId =
     roleType === "MALE_LEAD"
@@ -100,13 +103,17 @@ export async function createCastingEvent(
       ? `${date}T${endTime}:00`
       : `${date}T${addHours(startTime, 2)}:00`;
 
+    const attendees = actorEmail ? [{ email: actorEmail }] : undefined;
+
     const res = await calendar.events.insert({
       calendarId,
+      sendUpdates: actorEmail ? "all" : "none",
       requestBody: {
         summary,
         start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
         end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
         colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
+        attendees,
       },
     });
     return res.data.id || null;

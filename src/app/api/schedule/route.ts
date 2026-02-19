@@ -112,11 +112,13 @@ export async function GET(req: NextRequest) {
       : []),
   ]);
 
-  const castings: Record<string, { actorId: string; actorName: string }> = {};
+  const castings: Record<string, { castingId: string; actorId: string; actorName: string; synced: boolean }> = {};
   for (const c of castingRows) {
     castings[`${c.performanceDateId}_${c.roleType}`] = {
+      castingId: c.id,
       actorId: c.actor.id,
       actorName: c.actor.name,
+      synced: c.synced,
     };
   }
 
