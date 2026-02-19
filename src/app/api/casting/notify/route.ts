@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const castings = await prisma.casting.findMany({
     where: { id: { in: castingIds } },
     include: {
-      actor: { include: { user: true } },
+      actor: true,
       performanceDate: true,
     },
   });
@@ -41,14 +41,13 @@ export async function POST(req: NextRequest) {
   let sent = 0;
   let skipped = 0;
   let failed = 0;
-  const noEmailActors: string[] = [];
+  const noCalendarActors: string[] = [];
   const errors: string[] = [];
 
   for (const casting of castings) {
-    const actorEmail = casting.actor.user?.email || null;
-    if (!actorEmail) {
+    if (!casting.actor.calendarId) {
       skipped++;
-      noEmailActors.push(casting.actor.name);
+      noCalendarActors.push(casting.actor.name);
       continue;
     }
 
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // 새 이벤트 생성 (초대 알림 발송)
+      // 새 이벤트 생성
       const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
       const eventId = await createCastingEvent(
         casting.roleType,
@@ -74,7 +73,6 @@ export async function POST(req: NextRequest) {
         casting.performanceDate.startTime,
         casting.performanceDate.endTime,
         casting.performanceDate.label,
-        actorEmail,
         casting.actor.calendarId
       );
 
@@ -85,11 +83,7 @@ export async function POST(req: NextRequest) {
         });
         sent++;
       } else {
-        const calId = casting.roleType === "MALE_LEAD"
-          ? process.env.CALENDAR_MALE_LEAD
-          : process.env.CALENDAR_FEMALE_LEAD;
-        const hasSA = !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
-        errors.push(`${casting.actor.name}: calendarId=${calId ? "OK" : "MISSING"}, SA=${hasSA ? "OK" : "MISSING"}`);
+        errors.push(`${casting.actor.name}: 이벤트 생성 실패`);
         failed++;
       }
     } catch (e) {
@@ -103,8 +97,8 @@ export async function POST(req: NextRequest) {
   const parts: string[] = [];
   if (sent > 0) parts.push(`${sent}건 발송 완료`);
   if (skipped > 0) {
-    const uniqueNames = [...new Set(noEmailActors)];
-    parts.push(`${uniqueNames.join(", ")} 계정 미연결`);
+    const uniqueNames = [...new Set(noCalendarActors)];
+    parts.push(`${uniqueNames.join(", ")} 캘린더 미생성`);
   }
   if (failed > 0) parts.push(`${failed}건 발송 실패`);
   const message = parts.join(", ") || "발송 대상 없음";

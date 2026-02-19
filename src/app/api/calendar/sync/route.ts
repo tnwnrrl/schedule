@@ -67,7 +67,6 @@ export async function POST() {
       }
     }
 
-    const actorEmail = casting.actor.user?.email || null;
     const eventId = await createCastingEvent(
       casting.roleType,
       casting.actor.name,
@@ -75,7 +74,6 @@ export async function POST() {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      actorEmail,
       casting.actor.calendarId
     );
 

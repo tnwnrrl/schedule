@@ -152,7 +152,6 @@ export async function POST(req: NextRequest) {
   // 자동 캘린더 동기화 (실패해도 배정 응답에 영향 없음)
   try {
     const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
-    const actorEmail = actor!.user?.email || null;
     const eventId = await createCastingEvent(
       casting.roleType,
       casting.actor.name,
@@ -160,7 +159,6 @@ export async function POST(req: NextRequest) {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      actorEmail,
       actor!.calendarId
     );
     if (eventId) {

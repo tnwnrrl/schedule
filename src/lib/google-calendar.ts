@@ -81,7 +81,6 @@ export async function createCastingEvent(
   startTime: string,
   endTime?: string | null,
   label?: string | null,
-  actorEmail?: string | null,
   actorCalendarId?: string | null
 ): Promise<string | null> {
   // 배우 개인 캘린더 → 역할별 캘린더 → 없으면 실패

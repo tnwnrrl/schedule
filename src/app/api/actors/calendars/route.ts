@@ -6,30 +6,6 @@ import {
   shareCalendarWithEmail,
 } from "@/lib/google-calendar";
 
-// GET /api/actors/calendars - 서비스 계정 환경변수 진단
-export async function GET() {
-  const session = await auth();
-  if (session?.user?.role !== "ADMIN") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || "";
-  const key = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || "";
-
-  return NextResponse.json({
-    email: email || "MISSING",
-    keyLength: key.length,
-    keyStart: key.substring(0, 30),
-    keyEnd: key.substring(key.length - 30),
-    hasBeginMarker: key.includes("BEGIN PRIVATE KEY"),
-    hasEndMarker: key.includes("END PRIVATE KEY"),
-    hasLiteralNewlines: key.includes("\\n"),
-    hasRealNewlines: key.includes("\n"),
-    calendarMaleLead: process.env.CALENDAR_MALE_LEAD || "MISSING",
-    calendarFemaleLead: process.env.CALENDAR_FEMALE_LEAD || "MISSING",
-  });
-}
-
 // POST /api/actors/calendars - 배우별 개인 캘린더 일괄 생성/공유
 export async function POST() {
   const session = await auth();

@@ -168,7 +168,6 @@ export async function POST(req: NextRequest) {
       if (!perfDate || !actor) continue;
 
       const dateStr = perfDate.date.toISOString().split("T")[0];
-      const actorEmail = actor.user?.email || null;
       const eventId = await createCastingEvent(
         st.roleType,
         actor.name,
@@ -176,7 +175,6 @@ export async function POST(req: NextRequest) {
         perfDate.startTime,
         perfDate.endTime,
         perfDate.label,
-        actorEmail,
         actor.calendarId
       );
       if (eventId) {
