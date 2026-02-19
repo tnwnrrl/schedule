@@ -96,36 +96,29 @@ export async function createCastingEvent(
     return null;
   }
 
-  try {
-    const calendar = getCalendar();
-    const summary = `${actorName}${label ? ` (${label})` : ""}`;
+  const calendar = getCalendar();
+  const summary = `${actorName}${label ? ` (${label})` : ""}`;
 
-    // 시작/종료 시간 파싱
-    const startDateTime = `${date}T${startTime}:00`;
-    const endDateTime = endTime
-      ? `${date}T${endTime}:00`
-      : `${date}T${addHours(startTime, 2)}:00`;
+  // 시작/종료 시간 파싱
+  const startDateTime = `${date}T${startTime}:00`;
+  const endDateTime = endTime
+    ? `${date}T${endTime}:00`
+    : `${date}T${addHours(startTime, 2)}:00`;
 
-    const attendees = actorEmail ? [{ email: actorEmail }] : undefined;
+  const attendees = actorEmail ? [{ email: actorEmail }] : undefined;
 
-    const res = await calendar.events.insert({
-      calendarId,
-      sendUpdates: actorEmail ? "all" : "none",
-      requestBody: {
-        summary,
-        start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
-        end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
-        colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
-        attendees,
-      },
-    });
-    return res.data.id || null;
-  } catch (error: unknown) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    const errDetail = (error as { response?: { data?: unknown } })?.response?.data;
-    console.error("배역 캘린더 이벤트 생성 실패:", errMsg, errDetail ? JSON.stringify(errDetail) : "");
-    return null;
-  }
+  const res = await calendar.events.insert({
+    calendarId,
+    sendUpdates: actorEmail ? "all" : "none",
+    requestBody: {
+      summary,
+      start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
+      end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
+      colorId: roleType === "MALE_LEAD" ? "9" : "6", // 파랑/보라
+      attendees,
+    },
+  });
+  return res.data.id || null;
 }
 
 // 배역 배정 이벤트 업데이트
