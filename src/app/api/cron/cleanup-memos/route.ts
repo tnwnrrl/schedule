@@ -12,9 +12,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 오늘 00:00 UTC 기준으로 어제까지의 공연 조회
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  // KST 기준 오늘 00:00 UTC (DB에 UTC midnight으로 저장되어 있으므로)
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const todayStr = kstNow.toISOString().split("T")[0];
+  const today = new Date(todayStr + "T00:00:00Z");
 
   // 어제 이전 공연의 캐스팅 중 메모가 있는 것 조회
   const castingsWithMemos = await prisma.casting.findMany({
