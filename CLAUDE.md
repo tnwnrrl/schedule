@@ -34,7 +34,7 @@ npm run db:studio        # prisma studio (DB GUI)
 - `git push origin main` → Vercel 자동 배포 (트리거 안 되면 `npx vercel deploy --prod --yes`)
 - **DB 마이그레이션**: Turso 프로덕션 DB에 `@libsql/client`로 직접 DDL 실행 (prisma db push는 sqlite provider라 libsql URL 불가)
 - Turso 접속 정보: `npx vercel env pull .env.turso --environment production`으로 가져온 후 사용, 작업 완료 후 반드시 삭제
-- **Vercel Cron**: `vercel.json`에 정의, 매일 03:00 UTC (한국 12:00) 메모 자동 정리
+- **Vercel Cron**: `vercel.json`에 정의, 매일 16:00 UTC (한국 01:00) 메모 자동 정리
 
 ## 아키텍처
 
@@ -120,7 +120,7 @@ n8n (매일 01:00 KST)
     → GET 크롤러/bookings/today (예약 데이터 조회)
       → POST schedule.mysterydam.com/api/casting/reservations (메모 등록 + 캘린더 description)
 
-Vercel Cron (매일 03:00 UTC = 12:00 KST)
+Vercel Cron (매일 16:00 UTC = 01:00 KST)
   → GET /api/cron/cleanup-memos (과거 공연 메모 삭제)
 ```
 
