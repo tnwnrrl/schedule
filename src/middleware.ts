@@ -8,6 +8,7 @@ export async function middleware(req: NextRequest) {
   // Public API routes → pass through (자체 인증 사용)
   if (
     pathname.startsWith("/api/auth") ||
+    pathname === "/api/login" ||
     pathname.startsWith("/api/casting/reservations") ||
     pathname.startsWith("/api/cron/")
   ) {
