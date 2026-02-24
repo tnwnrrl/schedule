@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **언어**: TypeScript (경로 별칭 `@/*` → `./src/*`)
 - **DB**: SQLite (로컬) + Turso/LibSQL (프로덕션, `@prisma/adapter-libsql`)
 - **ORM**: Prisma 6
-- **인증**: Auth.js v5 (next-auth beta.30) + Google OAuth + JWT 전략
+- **인증**: 비밀번호 로그인 + next-auth/jwt (JWT 쿠키 직접 생성)
 - **캘린더**: `@googleapis/calendar` + `google-auth-library` (Service Account)
 - **UI**: Tailwind CSS v4 + shadcn/ui (Radix UI, new-york 스타일)
 
@@ -41,7 +41,7 @@ npm run db:studio        # prisma studio (DB GUI)
 ### 라우팅 & 권한
 
 ```
-/login              → 공개 (Google OAuth)
+/login              → 공개 (비밀번호 입력)
 /                   → 리다이렉트 (ADMIN → /admin, ACTOR → /actor)
 /admin/*            → ADMIN 전용
 /actor/*            → 인증된 사용자 (ACTOR + ADMIN)
@@ -49,7 +49,8 @@ npm run db:studio        # prisma studio (DB GUI)
 ```
 
 `src/middleware.ts`에서 인증 처리. 미들웨어 바이패스 경로:
-- `/api/auth/*` — OAuth 콜백
+- `/api/auth/*` — NextAuth 내부 라우트
+- `/api/login` — 비밀번호 로그인 API
 - `/api/casting/reservations` — 외부 API 키 인증 (RESERVATION_API_KEY)
 - `/api/cron/*` — Vercel Cron 인증 (CRON_SECRET)
 
@@ -85,9 +86,17 @@ unavailable: Record<actorId, performanceDateId[]>  // ← 날짜 아님, 회차 
 - 있으면 → `PrismaLibSql` 어댑터로 Turso 연결 (프로덕션)
 - 없으면 → 기본 SQLite (로컬 개발)
 
-### 인증 흐름 (`src/lib/auth.ts`)
+### 인증 흐름
 
-Auth.js v5 JWT 전략. JWT callback에서 DB 조회하여 `role`, `actorId`를 토큰에 주입. `ADMIN_EMAILS` 환경변수 기반 자동 role 할당은 최초 가입 시만 적용 → 기존 유저 role 변경은 DB 직접 수정.
+비밀번호 로그인 방식. Google OAuth 미사용.
+
+1. **로그인**: `/login` 페이지에서 비밀번호 입력 → `POST /api/login`
+2. **JWT 생성**: `/api/login`에서 `next-auth/jwt`의 `encode()`로 암호화된 JWT 생성
+3. **쿠키 설정**: `__Secure-authjs.session-token` 쿠키에 JWT 저장 (30일 유효)
+4. **인증 확인**: `src/middleware.ts`에서 `getToken()` (next-auth/jwt)으로 쿠키 검증
+5. **세션 조회**: 서버 컴포넌트에서 `auth()` (src/lib/auth.ts)로 세션 확인
+
+로그인 시 고정 관리자 계정 생성: `{ id: "admin", role: "ADMIN", actorId: null }`
 
 Session 확장 타입 (`src/types/next-auth.d.ts`):
 ```typescript
@@ -98,6 +107,7 @@ user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
 
 | 엔드포인트 | 메서드 | 권한 | 설명 |
 |-----------|--------|------|------|
+| `/api/login` | POST | 공개 | 비밀번호 검증 → JWT 쿠키 설정 |
 | `/api/schedule?year=&month=` | GET | Auth | 월별 통합 데이터 (performances, castings, unavailable, actors). 해당 월 PerformanceDate 없으면 SHOW_TIMES 기준 자동 생성 |
 | `/api/unavailable?actorId=` | GET | Auth | 불가일정 조회 |
 | `/api/unavailable` | POST | 본인/ADMIN | performanceDateIds 배열 → 기존 대비 diff 트랜잭션 |
@@ -164,8 +174,8 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 
 필수:
 - `DATABASE_URL` — SQLite 경로 (로컬)
-- `NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — 인증
-- `ADMIN_EMAILS` — 쉼표 구분 관리자 이메일
+- `NEXTAUTH_SECRET` — JWT 암호화 키
+- `ADMIN_PASSWORD` — 관리자 로그인 비밀번호
 
 프로덕션 전용:
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
