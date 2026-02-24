@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **언어**: TypeScript (경로 별칭 `@/*` → `./src/*`)
 - **DB**: SQLite (로컬) + Turso/LibSQL (프로덕션, `@prisma/adapter-libsql`)
 - **ORM**: Prisma 6
-- **인증**: 비밀번호 로그인 + next-auth/jwt (JWT 쿠키 직접 생성)
+- **인증**: 관리자 비밀번호 로그인 (`/api/login` → JWT) + 배우 Google OAuth (Auth.js v5)
 - **캘린더**: `@googleapis/calendar` + `google-auth-library` (Service Account)
 - **UI**: Tailwind CSS v4 + shadcn/ui (Radix UI, new-york 스타일)
 
@@ -41,7 +41,7 @@ npm run db:studio        # prisma studio (DB GUI)
 ### 라우팅 & 권한
 
 ```
-/login              → 공개 (비밀번호 입력)
+/login              → 공개 (관리자 비밀번호 / 배우 Google OAuth)
 /                   → 리다이렉트 (ADMIN → /admin, ACTOR → /actor)
 /admin/*            → ADMIN 전용
 /actor/*            → 인증된 사용자 (ACTOR + ADMIN)
@@ -88,15 +88,21 @@ unavailable: Record<actorId, performanceDateId[]>  // ← 날짜 아님, 회차 
 
 ### 인증 흐름
 
-비밀번호 로그인 방식. Google OAuth 미사용.
+두 가지 로그인 경로:
 
-1. **로그인**: `/login` 페이지에서 비밀번호 입력 → `POST /api/login`
-2. **JWT 생성**: `/api/login`에서 `next-auth/jwt`의 `encode()`로 암호화된 JWT 생성
-3. **쿠키 설정**: `__Secure-authjs.session-token` 쿠키에 JWT 저장 (30일 유효)
-4. **인증 확인**: `src/middleware.ts`에서 `getToken()` (next-auth/jwt)으로 쿠키 검증
-5. **세션 조회**: 서버 컴포넌트에서 `auth()` (src/lib/auth.ts)로 세션 확인
+**관리자 (비밀번호)**:
+1. `/login`에서 비밀번호 입력 → `POST /api/login`
+2. `/api/login`에서 `next-auth/jwt`의 `encode()`로 JWT 생성
+3. `__Secure-authjs.session-token` 쿠키에 저장 (30일 유효)
+4. 고정 관리자 계정: `{ id: "admin", role: "ADMIN", actorId: null }`
 
-로그인 시 고정 관리자 계정 생성: `{ id: "admin", role: "ADMIN", actorId: null }`
+**배우 (Google OAuth)**:
+1. `/login`에서 "Google로 로그인" 클릭 → 서버 액션 (`signIn("google", { redirect: false })`)
+2. Google OAuth 인증 → `/api/auth/callback/google`
+3. Auth.js가 JWT 생성, DB에서 `role`/`actorId` 조회하여 토큰에 주입
+4. `ADMIN_EMAILS` 환경변수 기반 자동 role 할당은 최초 가입 시만 적용
+
+**공통**: `src/middleware.ts`에서 `getToken()` (next-auth/jwt)으로 쿠키 검증
 
 Session 확장 타입 (`src/types/next-auth.d.ts`):
 ```typescript
@@ -176,6 +182,8 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 - `DATABASE_URL` — SQLite 경로 (로컬)
 - `NEXTAUTH_SECRET` — JWT 암호화 키
 - `ADMIN_PASSWORD` — 관리자 로그인 비밀번호
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — 배우 Google OAuth 인증
+- `ADMIN_EMAILS` — 쉼표 구분 관리자 이메일 (최초 가입 시 role 자동 할당)
 
 프로덕션 전용:
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
