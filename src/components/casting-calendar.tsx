@@ -167,7 +167,7 @@ export function CastingCalendar() {
           changes.push({
             performanceDateId: p.id,
             roleType,
-            actorId: newActorId ?? oldActorId,
+            actorId: newActorId !== oldActorId ? newActorId : oldActorId,
             ...memoData,
           });
         }
