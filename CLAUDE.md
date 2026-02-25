@@ -36,6 +36,7 @@ npm run db:studio        # prisma studio (DB GUI)
 - **DB 마이그레이션**: Turso 프로덕션 DB에 `@libsql/client`로 직접 DDL 실행 (prisma db push는 sqlite provider라 libsql URL 불가)
 - Turso 접속 정보: `npx vercel env pull .env.turso --environment production`으로 가져온 후 사용, 작업 완료 후 반드시 삭제
 - **Vercel Cron**: `vercel.json`에 정의, 매일 16:00 UTC (한국 01:00) 메모 자동 정리
+- **⚠ Prisma 스키마 변경 시 빌드 캐시 주의**: Vercel `git push` 배포는 이전 빌드 캐시(`node_modules/.prisma/client`)를 재사용하여, `prisma generate`가 실행되어도 캐시된 구 Prisma Client가 사용될 수 있음. 스키마에서 컬럼을 추가/삭제한 경우 반드시 `npx vercel deploy --prod --yes`로 강제 재배포하여 캐시 없이 빌드할 것. 증상: `no such column: main.Table.column` 런타임 에러 (500)
 
 ## 아키텍처
 

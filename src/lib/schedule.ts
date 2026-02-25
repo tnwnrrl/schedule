@@ -7,6 +7,23 @@ export function buildReservationDescription(name: string, contact: string): stri
   return `예약자: ${name}\n연락처: ${contact}`;
 }
 
+export interface BookingDetail {
+  booking_time: string;
+  customer_name: string;
+  phone_number: string;
+  has_visitor?: boolean;
+  visitor_name?: string | null;
+  visitor_phone?: string | null;
+}
+
+export function resolveBookingContact(booking: BookingDetail): { name: string; contact: string } {
+  const name = booking.has_visitor && booking.visitor_name
+    ? booking.visitor_name : booking.customer_name;
+  const contact = booking.has_visitor && booking.visitor_phone
+    ? booking.visitor_phone : booking.phone_number;
+  return { name, contact };
+}
+
 export function formatPerformanceDate(date: Date): string {
   return format(date, "M/d (EEE)", { locale: ko });
 }

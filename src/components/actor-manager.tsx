@@ -74,6 +74,7 @@ export function ActorManager({
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [monthlyUnavailable, setMonthlyUnavailable] = useState<Record<string, number>>({});
+  const [monthlyCasting, setMonthlyCasting] = useState<Record<string, number>>({});
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   // 불가일정 상세 보기용 데이터
   const [perfIdToInfo, setPerfIdToInfo] = useState<Record<string, { date: string; startTime: string }>>({});
@@ -89,6 +90,7 @@ export function ActorManager({
       const data = await res.json();
       const performances: Record<string, Array<{ id: string; startTime: string }>> = data.performances || {};
       const unavail: Record<string, string[]> = data.unavailable || {};
+      const castings: Record<string, { actorId: string }> = data.castings || {};
 
       // performanceDateId → { date, startTime } 역매핑
       const idMap: Record<string, { date: string; startTime: string }> = {};
@@ -105,6 +107,13 @@ export function ActorManager({
         counts[actorId] = (perfIds as string[]).length;
       }
       setMonthlyUnavailable(counts);
+
+      // 월별 배정 수 집계
+      const castingCounts: Record<string, number> = {};
+      for (const c of Object.values(castings)) {
+        castingCounts[c.actorId] = (castingCounts[c.actorId] || 0) + 1;
+      }
+      setMonthlyCasting(castingCounts);
     } catch {
       // silent
     } finally {
@@ -264,7 +273,7 @@ export function ActorManager({
       {/* 월 선택기 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500">불가일정 기준:</span>
+          <span className="text-sm text-gray-500">조회 기준:</span>
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handlePrevMonth}>
               <ChevronLeft className="h-4 w-4" />
@@ -366,7 +375,9 @@ export function ActorManager({
                 <TableHead>이름</TableHead>
                 <TableHead>연결된 계정</TableHead>
                 <TableHead className="text-center">캘린더</TableHead>
-                <TableHead className="text-center">배정</TableHead>
+                <TableHead className="text-center">
+                  배정 ({filterMonth}월)
+                </TableHead>
                 <TableHead className="text-center">
                   불가 ({filterMonth}월)
                 </TableHead>
@@ -411,7 +422,7 @@ export function ActorManager({
                     )}
                   </TableCell>
                   <TableCell className="text-center">
-                    {actor.castingCount}
+                    {monthlyLoading ? "..." : (monthlyCasting[actor.id] ?? 0)}
                   </TableCell>
                   <TableCell className="text-center">
                     {monthlyLoading ? "..." : (

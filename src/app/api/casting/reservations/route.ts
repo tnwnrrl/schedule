@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateEventDescription } from "@/lib/google-calendar";
-import { buildReservationDescription } from "@/lib/schedule";
+import { buildReservationDescription, resolveBookingContact } from "@/lib/schedule";
 
 interface Booking {
   customer_name: string;
@@ -104,12 +104,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 방문자 우선 로직 (크롤러의 send_all_notifications과 동일 패턴)
-    const name = booking.has_visitor && booking.visitor_name
-      ? booking.visitor_name
-      : booking.customer_name;
-    const phone = booking.has_visitor && booking.visitor_phone
-      ? booking.visitor_phone
-      : booking.phone_number;
+    const { name, contact: phone } = resolveBookingContact(booking);
 
     // ReservationStatus에 메모 저장 (캐스팅 독립)
     await prisma.reservationStatus.upsert({

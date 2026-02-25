@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ensureAndGetMonthPerformances } from "@/lib/schedule";
+import { ensureAndGetMonthPerformances, resolveBookingContact } from "@/lib/schedule";
+import type { BookingDetail } from "@/lib/schedule";
 
 // POST /api/reservations/sync
 export async function POST(req: NextRequest) {
@@ -22,9 +23,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { months, reservations } = body as {
+  const { months, reservations, booking_details } = body as {
     months: Array<{ year: number; month: number }>;
     reservations: Record<string, string[]>; // { "2026-02-25": ["15:15", "17:30"] }
+    booking_details?: Record<string, BookingDetail[]>;
   };
 
   // 하위 호환: 기존 year/month 단일 형식도 지원
@@ -54,20 +56,48 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 전체 PerformanceDate에 대해 ReservationStatus upsert (단일 트랜잭션)
+  // booking_details → slotKey Map 변환
+  const detailMap = new Map<string, BookingDetail>();
+  if (booking_details) {
+    for (const [dateStr, details] of Object.entries(booking_details)) {
+      for (const detail of details) {
+        detailMap.set(`${dateStr}_${detail.booking_time}`, detail);
+      }
+    }
+  }
+
+  // 전체 PerformanceDate에 대해 ReservationStatus upsert (예약 상세정보 포함)
   let reservedCount = 0;
   const upserts = allPerfDates.map((p) => {
     const dateStr = p.date.toISOString().split("T")[0];
-    const hasReservation = reservedSet.has(`${dateStr}_${p.startTime}`);
+    const slotKey = `${dateStr}_${p.startTime}`;
+    const hasReservation = reservedSet.has(slotKey);
     if (hasReservation) reservedCount++;
 
+    const detail = detailMap.get(slotKey);
+
+    if (hasReservation && detail) {
+      const { name, contact } = resolveBookingContact(detail);
+      return prisma.reservationStatus.upsert({
+        where: { performanceDateId: p.id },
+        update: { hasReservation, reservationName: name, reservationContact: contact },
+        create: { performanceDateId: p.id, hasReservation, reservationName: name, reservationContact: contact },
+      });
+    }
+
+    if (!hasReservation) {
+      return prisma.reservationStatus.upsert({
+        where: { performanceDateId: p.id },
+        update: { hasReservation, reservationName: null, reservationContact: null },
+        create: { performanceDateId: p.id, hasReservation },
+      });
+    }
+
+    // hasReservation=true but no detail → keep existing name/contact
     return prisma.reservationStatus.upsert({
       where: { performanceDateId: p.id },
       update: { hasReservation },
-      create: {
-        performanceDateId: p.id,
-        hasReservation,
-      },
+      create: { performanceDateId: p.id, hasReservation },
     });
   });
 
