@@ -62,9 +62,10 @@ export async function POST() {
     },
   });
 
-  // MALE_LEAD 캐스팅의 ReservationStatus 메모 일괄 조회
+  // MALE_LEAD 캐스팅 중 공연 당일인 건만 ReservationStatus 메모 조회
+  const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
   const malePerfDateIds = unsyncedCastings
-    .filter((c) => c.roleType === "MALE_LEAD")
+    .filter((c) => c.roleType === "MALE_LEAD" && c.performanceDate.date.toISOString().split("T")[0] === kstToday)
     .map((c) => c.performanceDateId);
   const resMemos = malePerfDateIds.length > 0
     ? await prisma.reservationStatus.findMany({
@@ -92,9 +93,9 @@ export async function POST() {
       await deleteFromAllCalendar(casting.allCalendarEventId).catch(() => {});
     }
 
-    // MALE_LEAD인 경우 ReservationStatus 메모로 description 생성
+    // MALE_LEAD인 경우 공연 당일에만 description 포함
     let description: string | undefined;
-    if (casting.roleType === "MALE_LEAD") {
+    if (casting.roleType === "MALE_LEAD" && dateStr === kstToday) {
       const memo = resMemoMap.get(casting.performanceDateId);
       if (memo?.reservationName && memo?.reservationContact) {
         description = buildReservationDescription(memo.reservationName, memo.reservationContact);

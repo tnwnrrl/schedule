@@ -192,11 +192,16 @@ export async function POST(req: NextRequest) {
     }
 
     // 새 이벤트 생성 (초대 알림)
-    // MALE_LEAD인 경우 ReservationStatus 메모 조회하여 description 전달
+    // MALE_LEAD인 경우 공연 당일에만 ReservationStatus 메모 → 캘린더 description
+    const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
     const memoMap = new Map(memoUpserts.map((m) => [m.performanceDateId, m]));
-    // memoUpserts에 없는 경우 DB에서 조회 필요 → syncTargets의 MALE_LEAD perfDateId 수집
+    // memoUpserts에 없는 경우 DB에서 조회 필요 → syncTargets의 당일 MALE_LEAD perfDateId 수집
     const maleSyncPerfDateIds = syncTargets
-      .filter((st) => st.roleType === "MALE_LEAD" && !memoMap.has(st.performanceDateId))
+      .filter((st) => {
+        if (st.roleType !== "MALE_LEAD" || memoMap.has(st.performanceDateId)) return false;
+        const pd = perfDateMap.get(st.performanceDateId);
+        return pd && pd.date.toISOString().split("T")[0] === kstToday;
+      })
       .map((st) => st.performanceDateId);
 
     let dbMemoMap = new Map<string, { reservationName: string | null; reservationContact: string | null }>();
@@ -213,14 +218,17 @@ export async function POST(req: NextRequest) {
       const actor = actorMap.get(st.actorId);
       if (!perfDate || !actor) continue;
 
-      // MALE_LEAD description 조합
+      // MALE_LEAD description: 공연 당일에만 포함
       let description: string | undefined;
       if (st.roleType === "MALE_LEAD") {
-        const localMemo = memoMap.get(st.performanceDateId);
-        const name = localMemo?.name || dbMemoMap.get(st.performanceDateId)?.reservationName;
-        const contact = localMemo?.contact || dbMemoMap.get(st.performanceDateId)?.reservationContact;
-        if (name && contact) {
-          description = buildReservationDescription(name, contact);
+        const perfDateStr = perfDate.date.toISOString().split("T")[0];
+        if (perfDateStr === kstToday) {
+          const localMemo = memoMap.get(st.performanceDateId);
+          const name = localMemo?.name || dbMemoMap.get(st.performanceDateId)?.reservationName;
+          const contact = localMemo?.contact || dbMemoMap.get(st.performanceDateId)?.reservationContact;
+          if (name && contact) {
+            description = buildReservationDescription(name, contact);
+          }
         }
       }
 

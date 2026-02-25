@@ -168,15 +168,19 @@ export async function POST(req: NextRequest) {
 
   // 자동 캘린더 동기화 (실패해도 배정 응답에 영향 없음)
   try {
-    // MALE_LEAD인 경우 ReservationStatus 메모 조회하여 description 전달
+    // MALE_LEAD인 경우 공연 당일에만 ReservationStatus 메모 → 캘린더 description
     let description: string | undefined;
     if (roleType === "MALE_LEAD") {
-      const resMemo = await prisma.reservationStatus.findUnique({
-        where: { performanceDateId },
-        select: { reservationName: true, reservationContact: true },
-      });
-      if (resMemo?.reservationName && resMemo?.reservationContact) {
-        description = buildReservationDescription(resMemo.reservationName, resMemo.reservationContact);
+      const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const perfDateStr = casting.performanceDate.date.toISOString().split("T")[0];
+      if (perfDateStr === kstToday) {
+        const resMemo = await prisma.reservationStatus.findUnique({
+          where: { performanceDateId },
+          select: { reservationName: true, reservationContact: true },
+        });
+        if (resMemo?.reservationName && resMemo?.reservationContact) {
+          description = buildReservationDescription(resMemo.reservationName, resMemo.reservationContact);
+        }
       }
     }
 
