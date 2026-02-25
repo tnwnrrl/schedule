@@ -86,6 +86,8 @@ unavailable: Record<actorId, performanceDateId[]>  // ← 날짜 아님, 회차 
 - 있으면 → `PrismaLibSql` 어댑터로 Turso 연결 (프로덕션)
 - 없으면 → 기본 SQLite (로컬 개발)
 
+Prisma 클라이언트는 모듈 레벨 싱글톤 패턴 (Vercel serverless 환경에서 커넥션 풀 누수 방지)
+
 ### 인증 흐름
 
 두 가지 로그인 경로:
@@ -102,7 +104,12 @@ unavailable: Record<actorId, performanceDateId[]>  // ← 날짜 아님, 회차 
 3. Auth.js가 JWT 생성, DB에서 `role`/`actorId` 조회하여 토큰에 주입
 4. `ADMIN_EMAILS` 환경변수 기반 자동 role 할당은 최초 가입 시만 적용
 
-**공통**: `src/middleware.ts`에서 `getToken()` (next-auth/jwt)으로 쿠키 검증
+**공통**: `src/middleware.ts`에서 `getToken()` (next-auth/jwt)으로 쿠키 검증. 두 경로 모두 동일한 `__Secure-authjs.session-token` 쿠키 사용.
+
+**주의사항**:
+- 관리자 JWT는 `/api/login`에서 `encode()` (next-auth/jwt)로 직접 생성 — Auth.js 콜백을 거치지 않음
+- Google OAuth 첫 로그인 시 role 할당에 ~100ms 지연 (`setTimeout` 워크어라운드, signIn 콜백)
+- 기존 유저 role 변경은 DB 직접 수정 필요
 
 Session 확장 타입 (`src/types/next-auth.d.ts`):
 ```typescript
@@ -165,7 +172,7 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 
 ### Google Calendar 연동 (`src/lib/google-calendar.ts`)
 
-`@googleapis/calendar` + `google-auth-library` (JWT). Auth 인스턴스 모듈 레벨 캐싱.
+`@googleapis/calendar` + `google-auth-library` (Service Account JWT). Auth 인스턴스 모듈 레벨 캐싱 (serverless 재사용).
 
 - 불가일정 → 배우 개인 캘린더(`Actor.calendarId`)에 종일 이벤트 (빨강 colorId:11)
 - 배정 → 역할별 캘린더(`CALENDAR_MALE_LEAD`/`CALENDAR_FEMALE_LEAD`)에 시간 이벤트 (파랑:9 / 보라:6)
@@ -180,8 +187,9 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 
 필수:
 - `DATABASE_URL` — SQLite 경로 (로컬)
-- `NEXTAUTH_SECRET` — JWT 암호화 키
-- `ADMIN_PASSWORD` — 관리자 로그인 비밀번호
+- `NEXTAUTH_SECRET` — JWT 암호화/복호화 키 (관리자·배우 공통)
+- `NEXTAUTH_URL` — OAuth 콜백 기준 URL (로컬: `http://localhost:3000`)
+- `ADMIN_PASSWORD` — 관리자 로그인 비밀번호 (Vercel CLI로 설정 시 `printf '%s'` 사용, `echo` 금지 — 줄바꿈 주의)
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — 배우 Google OAuth 인증
 - `ADMIN_EMAILS` — 쉼표 구분 관리자 이메일 (최초 가입 시 role 자동 할당)
 
