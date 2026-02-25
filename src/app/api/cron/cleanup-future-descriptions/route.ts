@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateEventDescription } from "@/lib/google-calendar";
+import { updateEventDescription, updateAllCalendarDescription } from "@/lib/google-calendar";
 
 // GET /api/cron/cleanup-future-descriptions
 // 일회성: 미래 날짜 MALE_LEAD 캐스팅의 캘린더 description 제거
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -43,12 +44,8 @@ export async function GET(req: NextRequest) {
     }
 
     // 전체배우일정 캘린더 description 제거
-    if (casting.allCalendarEventId && process.env.CALENDAR_ALL_ACTORS) {
-      await updateEventDescription(
-        process.env.CALENDAR_ALL_ACTORS,
-        casting.allCalendarEventId,
-        null
-      ).catch(() => { failed++; });
+    if (casting.allCalendarEventId) {
+      await updateAllCalendarDescription(casting.allCalendarEventId, null).catch(() => {});
     }
   }
 
