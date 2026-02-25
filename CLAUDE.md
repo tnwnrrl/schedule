@@ -158,7 +158,7 @@ user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
   → ReservationStatus upsert (회차별 예약 유무)
 ```
 
-**2. 예약자 메모 등록 (Casting 필드)**
+**2. 예약자 메모 등록 (ReservationStatus 필드)**
 ```
 n8n (매일 01:00 KST)
   → POST 크롤러/send-all-notifications (네이버 예약 크롤링 + 알림톡)
@@ -166,13 +166,33 @@ n8n (매일 01:00 KST)
       → POST schedule.mysterydam.com/api/casting/reservations (메모 등록 + 캘린더 description)
 
 Vercel Cron (매일 16:00 UTC = 01:00 KST)
-  → GET /api/cron/cleanup-memos (과거 공연 메모 삭제)
+  → GET /api/cron/cleanup-memos (과거 공연 메모 삭제, 상대역 이름은 유지)
 ```
 
 - 크롤러: NAS Docker 컨테이너 (`CRAWLER_URL` 환경변수)
-- Casting 모델의 `reservationName`, `reservationContact` 필드에 저장
+- `ReservationStatus` 모델의 `reservationName`, `reservationContact` 필드에 저장
 - MALE_LEAD 캐스팅에만 예약 메모 연결
 - `/api/casting/reservations`에서 한국어 시간 파싱 (`parseKoreanTime`: "오후 3:15" → "15:15")
+
+### 캘린더 description 라이프사이클
+
+MALE_LEAD 캘린더 이벤트의 description은 두 종류의 정보를 포함:
+
+```
+상대역: 여자배우이름     ← 항상 (배정 즉시)
+예약자: 홍길동           ← 공연 당일에만
+연락처: 010-1234-5678   ← 공연 당일에만
+```
+
+**라이프사이클:**
+```
+공연 이전:     DB에 메모 저장됨 / 캘린더 = "상대역: OOO"만
+공연 당일 01:00: n8n → /api/casting/reservations → 캘린더에 예약 메모 추가
+공연 당일 배정:  당일이므로 상대역 + 예약 메모 모두 포함
+공연 다음날 01:00: Cron → description에서 예약 메모 제거 (상대역은 유지)
+```
+
+**상대역 자동 갱신:** FEMALE_LEAD 배정/변경/해제 시 같은 회차 MALE_LEAD의 캘린더 description이 자동 갱신됨. `buildCastingDescription()` (`src/lib/schedule.ts`)으로 조합.
 
 ### 컴포넌트 구조
 
@@ -194,6 +214,7 @@ Vercel Cron (매일 16:00 UTC = 01:00 KST)
 ### 공유 유틸리티 (`src/lib/schedule.ts`)
 
 - `ensureAndGetMonthPerformances(year, month)` — 해당 월 PerformanceDate가 부족하면 SHOW_TIMES 기준으로 자동 생성 후 반환. `/api/schedule`, `/api/reservations/sync`, `/api/reservations/trigger-sync`에서 공통 사용
+- `buildCastingDescription({ partnerName?, reservationName?, reservationContact? })` — MALE_LEAD 캘린더 description 조합 (상대역 + 예약메모). 모든 캘린더 이벤트 생성/갱신에서 공통 사용
 - `getMonthDates(year, month)` — YYYY-MM-DD 형식 날짜 배열 생성
 - `formatPerformanceDate(date)` — "M/d (EEE)" 한국어 포맷
 - `formatPerformanceDateTime(date, startTime, endTime?)` — 시간 범위 포함 포맷
@@ -212,10 +233,10 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 `@googleapis/calendar` + `google-auth-library` (Service Account JWT). Auth 인스턴스 모듈 레벨 캐싱 (serverless 재사용).
 
 - 불가일정 → 배우 개인 캘린더(`Actor.calendarId`)에 종일 이벤트 (빨강 colorId:11)
-- 배정 → 역할별 캘린더(`CALENDAR_MALE_LEAD`/`CALENDAR_FEMALE_LEAD`)에 시간 이벤트 (파랑:9 / 보라:6)
-- 예약 메모 → 캘린더 이벤트 description에 "예약자: OOO\n연락처: 010..." 형식
-- `synced` + `calendarEventId` 필드로 동기화 상태 추적
-- `updateEventDescription()` — 기존 이벤트의 description만 patch
+- 배정 → 배우 개인 캘린더에 시간 이벤트 (파랑:9 남자 / 보라:6 여자) + 전체배우일정 캘린더(`CALENDAR_ALL_ACTORS`)에 미러링
+- MALE_LEAD description → 상대역(항상) + 예약메모(당일만). `buildCastingDescription()`으로 조합
+- `synced` + `calendarEventId` + `allCalendarEventId` 필드로 동기화 상태 추적
+- `updateEventDescription()` / `updateAllCalendarDescription()` — 기존 이벤트의 description만 patch
 - `/api/calendar/sync`에서 관리자 수동 트리거
 
 ## 환경변수
@@ -233,7 +254,8 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 프로덕션 전용:
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` — Calendar API
-- `CALENDAR_MALE_LEAD`, `CALENDAR_FEMALE_LEAD` — 역할 캘린더 ID
+- `CALENDAR_MALE_LEAD`, `CALENDAR_FEMALE_LEAD` — 역할 캘린더 ID (현재 미사용, 개인 캘린더로 대체)
+- `CALENDAR_ALL_ACTORS` — 전체배우일정 캘린더 ID (미러링 대상)
 - `RESERVATION_API_KEY` — 크롤러→schedule 예약 API 인증 (`/api/casting/reservations`, `/api/reservations/sync`)
 - `CRAWLER_URL` — 네이버 예약 크롤러 URL (`/api/reservations/trigger-sync`에서 직접 호출)
 - `CRON_SECRET` — Vercel Cron 인증
