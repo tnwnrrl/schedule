@@ -44,8 +44,6 @@ interface CastingInfo {
   actorId: string;
   actorName: string;
   synced: boolean;
-  reservationName?: string | null;
-  reservationContact?: string | null;
 }
 
 interface ScheduleData {
@@ -55,6 +53,7 @@ interface ScheduleData {
   actors: Actor[];
   overriddenActors?: string[];
   reservations?: Record<string, boolean>;
+  reservationMemos?: Record<string, { name: string; contact: string }>;
   reservationCheckedAt?: string | null;
 }
 
@@ -114,9 +113,10 @@ export function CastingCalendar() {
         const casting = data.castings[key];
         initial[key] = casting?.actorId || "";
         if (roleType === "MALE_LEAD") {
+          const memo = data.reservationMemos?.[p.id];
           initialMemos[p.id] = {
-            name: casting?.reservationName || "",
-            contact: casting?.reservationContact || "",
+            name: memo?.name || "",
+            contact: memo?.contact || "",
           };
         }
       }
@@ -151,8 +151,9 @@ export function CastingCalendar() {
         let memoData: { reservationName?: string | null; reservationContact?: string | null } = {};
         if (roleType === "MALE_LEAD") {
           const memo = dialogMemos[p.id];
-          const oldName = casting?.reservationName || "";
-          const oldContact = casting?.reservationContact || "";
+          const oldMemo = data.reservationMemos?.[p.id];
+          const oldName = oldMemo?.name || "";
+          const oldContact = oldMemo?.contact || "";
           if (memo && (memo.name !== oldName || memo.contact !== oldContact)) {
             memoChanged = true;
             memoData = {

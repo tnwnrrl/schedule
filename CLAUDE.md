@@ -26,6 +26,7 @@ npm run build            # prisma generate && next build
 npm run lint             # eslint
 npm run db:migrate       # prisma migrate dev
 npm run db:seed          # npx tsx prisma/seed.ts (6명 배우 + 10회 공연 샘플)
+npm run db:reset         # prisma migrate reset (DB 초기화 + seed 재실행)
 npm run db:studio        # prisma studio (DB GUI)
 ```
 
@@ -52,6 +53,7 @@ npm run db:studio        # prisma studio (DB GUI)
 - `/api/auth/*` — NextAuth 내부 라우트
 - `/api/login` — 비밀번호 로그인 API
 - `/api/casting/reservations` — 외부 API 키 인증 (RESERVATION_API_KEY)
+- `/api/reservations/*` — 외부 API 키 인증 (RESERVATION_API_KEY)
 - `/api/cron/*` — Vercel Cron 인증 (CRON_SECRET)
 
 ### 데이터 모델 핵심 관계
@@ -60,13 +62,16 @@ npm run db:studio        # prisma studio (DB GUI)
 User ←1:1→ Actor (User.actorId, 관리자가 수동 link)
 Actor → UnavailableDate[] (performanceDateId FK, 회차 단위)
 Actor → Casting[]
-PerformanceDate → Casting[], UnavailableDate[]
+Actor → ActorMonthOverride[] (월별 비활성화)
+PerformanceDate → Casting[], UnavailableDate[], ReservationStatus?
 ```
 
 유니크 제약:
 - `Casting(performanceDateId, roleType)` — 회차당 역할 1명
 - `UnavailableDate(actorId, performanceDateId)` — 중복 불가일정 방지
 - `PerformanceDate(date, startTime)` — 회차 중복 방지
+- `ReservationStatus(performanceDateId)` — 회차당 예약 상태 1:1
+- `ActorMonthOverride(actorId, year, month)` — 배우별 월 비활성화 1건
 
 ### 핵심 데이터 패턴: 불가일정은 날짜가 아닌 회차(performanceDateId)
 
@@ -132,11 +137,27 @@ user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
 | `/api/actors/[id]/link` | POST | ADMIN | User ↔ Actor 연결 |
 | `/api/actors/calendars` | GET | ADMIN | 배우 캘린더 목록 |
 | `/api/actor-override` | POST | ADMIN | 월별 배우 비활성화 |
+| `/api/performances` | GET | Auth | 전체 공연일정 + 캐스팅 조회 |
+| `/api/reservations/sync` | POST | API Key | 예약 현황 동기화 (크롤러→schedule). 다중 월 지원 |
+| `/api/reservations/trigger-sync` | POST | ADMIN | 크롤러 직접 호출하여 예약 동기화 (수동 트리거) |
 | `/api/calendar/sync` | POST | ADMIN | synced=false인 항목 Google Calendar 동기화 |
 | `/api/cron/cleanup-memos` | GET | CRON_SECRET | 어제 이전 공연 예약 메모 자동 삭제 + 캘린더 description 제거 |
 
-### 예약 메모 자동화 흐름
+### 예약 연동 흐름
 
+두 가지 경로로 예약 데이터가 연동됨:
+
+**1. 예약 현황 동기화 (ReservationStatus)**
+```
+관리자 수동: POST /api/reservations/trigger-sync
+  → 크롤러 GET /bookings/month (이번달+다음달 예약 조회)
+  → ReservationStatus upsert (회차별 예약 유무)
+
+크롤러 자동: POST /api/reservations/sync (API Key 인증)
+  → ReservationStatus upsert (회차별 예약 유무)
+```
+
+**2. 예약자 메모 등록 (Casting 필드)**
 ```
 n8n (매일 01:00 KST)
   → POST 크롤러/send-all-notifications (네이버 예약 크롤링 + 알림톡)
@@ -147,9 +168,10 @@ Vercel Cron (매일 16:00 UTC = 01:00 KST)
   → GET /api/cron/cleanup-memos (과거 공연 메모 삭제)
 ```
 
-- 크롤러: NAS(192.168.219.187:8080) Docker 컨테이너
+- 크롤러: NAS Docker 컨테이너 (`CRAWLER_URL` 환경변수)
 - Casting 모델의 `reservationName`, `reservationContact` 필드에 저장
 - MALE_LEAD 캐스팅에만 예약 메모 연결
+- `/api/casting/reservations`에서 한국어 시간 파싱 (`parseKoreanTime`: "오후 3:15" → "15:15")
 
 ### 컴포넌트 구조
 
@@ -160,6 +182,20 @@ Vercel Cron (매일 16:00 UTC = 01:00 KST)
 - **로딩 스켈레톤**: 각 라우트 세그먼트별 `loading.tsx` (admin, admin/actors, admin/casting, actor)
 
 데이터 흐름: 서버 컴포넌트가 페이지 셸 렌더 → 클라이언트 캘린더 컴포넌트가 `/api/schedule` fetch → 월별 데이터로 렌더
+
+### 예약 취소 충돌 상태 (Cancellation Conflict)
+
+`CastingCalendar`에서 `hasReservation === false && (배역 배정 존재)` 충돌을 감지하여 오렌지 경고 표시:
+- 캘린더 셀: 오렌지 배경 + ⚠ 아이콘 + "예약취소 N" 뱃지
+- 다이얼로그: 오렌지 테두리 + AlertTriangle + "배정 해제를 검토하세요" 안내
+- 충돌 상태에서도 Select/Input 활성화 → 관리자가 "미배정" 선택 가능
+
+### 공유 유틸리티 (`src/lib/schedule.ts`)
+
+- `ensureAndGetMonthPerformances(year, month)` — 해당 월 PerformanceDate가 부족하면 SHOW_TIMES 기준으로 자동 생성 후 반환. `/api/schedule`, `/api/reservations/sync`, `/api/reservations/trigger-sync`에서 공통 사용
+- `getMonthDates(year, month)` — YYYY-MM-DD 형식 날짜 배열 생성
+- `formatPerformanceDate(date)` — "M/d (EEE)" 한국어 포맷
+- `formatPerformanceDateTime(date, startTime, endTime?)` — 시간 범위 포함 포맷
 
 ### 상수 (`src/lib/constants.ts`)
 
@@ -197,5 +233,6 @@ SHOW_TIME_LABELS = { "10:45": "1회 10:45", ... }
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` — Turso DB
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` — Calendar API
 - `CALENDAR_MALE_LEAD`, `CALENDAR_FEMALE_LEAD` — 역할 캘린더 ID
-- `RESERVATION_API_KEY` — 크롤러→schedule 예약 API 인증
+- `RESERVATION_API_KEY` — 크롤러→schedule 예약 API 인증 (`/api/casting/reservations`, `/api/reservations/sync`)
+- `CRAWLER_URL` — 네이버 예약 크롤러 URL (`/api/reservations/trigger-sync`에서 직접 호출)
 - `CRON_SECRET` — Vercel Cron 인증

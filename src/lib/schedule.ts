@@ -3,6 +3,10 @@ import { ko } from "date-fns/locale";
 import { prisma } from "@/lib/prisma";
 import { SHOW_TIMES } from "@/lib/constants";
 
+export function buildReservationDescription(name: string, contact: string): string {
+  return `예약자: ${name}\n연락처: ${contact}`;
+}
+
 export function formatPerformanceDate(date: Date): string {
   return format(date, "M/d (EEE)", { locale: ko });
 }

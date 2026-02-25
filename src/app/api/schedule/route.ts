@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.reservationStatus.findMany({
       where: { performanceDateId: { in: perfDateIds } },
-      select: { performanceDateId: true, hasReservation: true, checkedAt: true },
+      select: { performanceDateId: true, hasReservation: true, reservationName: true, reservationContact: true, checkedAt: true },
     }),
     ...(isAdmin
       ? [prisma.actorMonthOverride.findMany({
@@ -65,15 +65,13 @@ export async function GET(req: NextRequest) {
       : []),
   ]);
 
-  const castings: Record<string, { castingId: string; actorId: string; actorName: string; synced: boolean; reservationName?: string | null; reservationContact?: string | null }> = {};
+  const castings: Record<string, { castingId: string; actorId: string; actorName: string; synced: boolean }> = {};
   for (const c of castingRows) {
     castings[`${c.performanceDateId}_${c.roleType}`] = {
       castingId: c.id,
       actorId: c.actor.id,
       actorName: c.actor.name,
       synced: c.synced,
-      reservationName: c.reservationName,
-      reservationContact: c.reservationContact,
     };
   }
 
@@ -86,9 +84,16 @@ export async function GET(req: NextRequest) {
 
   // ReservationStatus 매핑
   const reservations: Record<string, boolean> = {};
+  const reservationMemos: Record<string, { name: string; contact: string }> = {};
   let reservationCheckedAt: string | null = null;
   for (const r of reservationRows) {
     reservations[r.performanceDateId] = r.hasReservation;
+    if (r.reservationName || r.reservationContact) {
+      reservationMemos[r.performanceDateId] = {
+        name: r.reservationName || "",
+        contact: r.reservationContact || "",
+      };
+    }
     if (!reservationCheckedAt || r.checkedAt > new Date(reservationCheckedAt)) {
       reservationCheckedAt = r.checkedAt.toISOString();
     }
@@ -100,7 +105,7 @@ export async function GET(req: NextRequest) {
     : undefined;
 
   return NextResponse.json(
-    { performances, castings, unavailable, actors, reservations, reservationCheckedAt, ...(overriddenActors !== undefined && { overriddenActors }) },
+    { performances, castings, unavailable, actors, reservations, reservationMemos, reservationCheckedAt, ...(overriddenActors !== undefined && { overriddenActors }) },
     {
       headers: {
         "Cache-Control": "private, s-maxage=30, stale-while-revalidate=60",

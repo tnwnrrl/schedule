@@ -6,6 +6,7 @@ import {
   deleteCalendarEvent,
   createCastingEvent,
 } from "@/lib/google-calendar";
+import { buildReservationDescription } from "@/lib/schedule";
 
 // POST /api/calendar/sync - 전체 동기화 (관리자 전용)
 export async function POST() {
@@ -52,6 +53,18 @@ export async function POST() {
     },
   });
 
+  // MALE_LEAD 캐스팅의 ReservationStatus 메모 일괄 조회
+  const malePerfDateIds = unsyncedCastings
+    .filter((c) => c.roleType === "MALE_LEAD")
+    .map((c) => c.performanceDateId);
+  const resMemos = malePerfDateIds.length > 0
+    ? await prisma.reservationStatus.findMany({
+        where: { performanceDateId: { in: malePerfDateIds } },
+        select: { performanceDateId: true, reservationName: true, reservationContact: true },
+      })
+    : [];
+  const resMemoMap = new Map(resMemos.map((m) => [m.performanceDateId, m]));
+
   for (const casting of unsyncedCastings) {
     const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
 
@@ -67,6 +80,15 @@ export async function POST() {
       }
     }
 
+    // MALE_LEAD인 경우 ReservationStatus 메모로 description 생성
+    let description: string | undefined;
+    if (casting.roleType === "MALE_LEAD") {
+      const memo = resMemoMap.get(casting.performanceDateId);
+      if (memo?.reservationName && memo?.reservationContact) {
+        description = buildReservationDescription(memo.reservationName, memo.reservationContact);
+      }
+    }
+
     const eventId = await createCastingEvent(
       casting.roleType,
       casting.actor.name,
@@ -74,7 +96,8 @@ export async function POST() {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      casting.actor.calendarId
+      casting.actor.calendarId,
+      description
     );
 
     if (eventId) {

@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
   const todayStr = kstNow.toISOString().split("T")[0];
   const today = new Date(todayStr + "T00:00:00Z");
 
-  // 어제 이전 공연의 캐스팅 중 메모가 있는 것 조회
-  const castingsWithMemos = await prisma.casting.findMany({
+  // 어제 이전 공연의 ReservationStatus 중 메모가 있는 것 조회
+  const reservationsWithMemos = await prisma.reservationStatus.findMany({
     where: {
       performanceDate: {
         date: { lt: today },
@@ -30,21 +30,35 @@ export async function GET(req: NextRequest) {
       ],
     },
     include: {
-      actor: { select: { calendarId: true } },
+      performanceDate: true,
     },
   });
 
-  if (castingsWithMemos.length === 0) {
+  if (reservationsWithMemos.length === 0) {
     return NextResponse.json({ success: true, cleaned: 0 });
   }
+
+  // 해당 회차의 MALE_LEAD 캐스팅 조회 (캘린더 이벤트 description 제거용)
+  const perfDateIds = reservationsWithMemos.map((r) => r.performanceDateId);
+  const maleCastings = await prisma.casting.findMany({
+    where: {
+      performanceDateId: { in: perfDateIds },
+      roleType: "MALE_LEAD",
+      calendarEventId: { not: null },
+    },
+    include: {
+      actor: { select: { calendarId: true } },
+    },
+  });
+  const castingByPerfDate = new Map(maleCastings.map((c) => [c.performanceDateId, c]));
 
   let cleaned = 0;
   let calendarUpdated = 0;
 
-  for (const casting of castingsWithMemos) {
+  for (const reservation of reservationsWithMemos) {
     // DB에서 메모 필드 null 처리
-    await prisma.casting.update({
-      where: { id: casting.id },
+    await prisma.reservationStatus.update({
+      where: { id: reservation.id },
       data: {
         reservationName: null,
         reservationContact: null,
@@ -53,12 +67,10 @@ export async function GET(req: NextRequest) {
     cleaned++;
 
     // Google Calendar 이벤트 description 제거
-    if (casting.calendarEventId) {
+    const casting = castingByPerfDate.get(reservation.performanceDateId);
+    if (casting?.calendarEventId) {
       const calendarId =
-        casting.actor.calendarId ||
-        (casting.roleType === "MALE_LEAD"
-          ? process.env.CALENDAR_MALE_LEAD
-          : process.env.CALENDAR_FEMALE_LEAD);
+        casting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
 
       if (calendarId) {
         const updated = await updateEventDescription(

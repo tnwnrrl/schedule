@@ -5,6 +5,7 @@ import {
   createCastingEvent,
   deleteCalendarEvent,
 } from "@/lib/google-calendar";
+import { buildReservationDescription } from "@/lib/schedule";
 
 interface CastingChange {
   performanceDateId: string;
@@ -68,6 +69,8 @@ export async function POST(req: NextRequest) {
   // 캘린더 동기화 대상 추적
   const syncTargets: Array<{ performanceDateId: string; roleType: string; actorId: string }> = [];
   const deleteTargets: Array<{ roleType: string; calendarEventId: string; actorId?: string }> = [];
+  // ReservationStatus 메모 upsert 대상
+  const memoUpserts: Array<{ performanceDateId: string; name: string | null; contact: string | null }> = [];
 
   for (const change of changes) {
     const key = `${change.performanceDateId}_${change.roleType}`;
@@ -86,6 +89,15 @@ export async function POST(req: NextRequest) {
     const existing = existingCastingMap.get(key);
     if (existing?.calendarEventId) {
       deleteTargets.push({ roleType: change.roleType, calendarEventId: existing.calendarEventId, actorId: existing.actorId });
+    }
+
+    // 메모 변경사항이 있으면 ReservationStatus upsert 대상으로 추적
+    if (change.reservationName !== undefined || change.reservationContact !== undefined) {
+      memoUpserts.push({
+        performanceDateId: change.performanceDateId,
+        name: change.reservationName ?? null,
+        contact: change.reservationContact ?? null,
+      });
     }
 
     // 배정 해제
@@ -119,14 +131,6 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const memoData: Record<string, string | null> = {};
-    if (change.reservationName !== undefined) {
-      memoData.reservationName = change.reservationName ?? null;
-    }
-    if (change.reservationContact !== undefined) {
-      memoData.reservationContact = change.reservationContact ?? null;
-    }
-
     operations.push(
       prisma.casting.upsert({
         where: {
@@ -135,13 +139,12 @@ export async function POST(req: NextRequest) {
             roleType: change.roleType,
           },
         },
-        update: { actorId: change.actorId, synced: false, ...memoData },
+        update: { actorId: change.actorId, synced: false },
         create: {
           performanceDateId: change.performanceDateId,
           actorId: change.actorId,
           roleType: change.roleType,
           synced: false,
-          ...memoData,
         },
       })
     );
@@ -151,6 +154,17 @@ export async function POST(req: NextRequest) {
       actorId: change.actorId,
     });
     results.push({ key, success: true });
+  }
+
+  // ReservationStatus 메모 upsert 추가
+  for (const memo of memoUpserts) {
+    operations.push(
+      prisma.reservationStatus.upsert({
+        where: { performanceDateId: memo.performanceDateId },
+        update: { reservationName: memo.name, reservationContact: memo.contact },
+        create: { performanceDateId: memo.performanceDateId, hasReservation: false, reservationName: memo.name, reservationContact: memo.contact },
+      })
+    );
   }
 
   if (operations.length > 0) {
@@ -173,10 +187,37 @@ export async function POST(req: NextRequest) {
     }
 
     // 새 이벤트 생성 (초대 알림)
+    // MALE_LEAD인 경우 ReservationStatus 메모 조회하여 description 전달
+    const memoMap = new Map(memoUpserts.map((m) => [m.performanceDateId, m]));
+    // memoUpserts에 없는 경우 DB에서 조회 필요 → syncTargets의 MALE_LEAD perfDateId 수집
+    const maleSyncPerfDateIds = syncTargets
+      .filter((st) => st.roleType === "MALE_LEAD" && !memoMap.has(st.performanceDateId))
+      .map((st) => st.performanceDateId);
+
+    let dbMemoMap = new Map<string, { reservationName: string | null; reservationContact: string | null }>();
+    if (maleSyncPerfDateIds.length > 0) {
+      const dbMemos = await prisma.reservationStatus.findMany({
+        where: { performanceDateId: { in: maleSyncPerfDateIds } },
+        select: { performanceDateId: true, reservationName: true, reservationContact: true },
+      });
+      dbMemoMap = new Map(dbMemos.map((m) => [m.performanceDateId, m]));
+    }
+
     for (const st of syncTargets) {
       const perfDate = perfDateMap.get(st.performanceDateId);
       const actor = actorMap.get(st.actorId);
       if (!perfDate || !actor) continue;
+
+      // MALE_LEAD description 조합
+      let description: string | undefined;
+      if (st.roleType === "MALE_LEAD") {
+        const localMemo = memoMap.get(st.performanceDateId);
+        const name = localMemo?.name || dbMemoMap.get(st.performanceDateId)?.reservationName;
+        const contact = localMemo?.contact || dbMemoMap.get(st.performanceDateId)?.reservationContact;
+        if (name && contact) {
+          description = buildReservationDescription(name, contact);
+        }
+      }
 
       const dateStr = perfDate.date.toISOString().split("T")[0];
       const eventId = await createCastingEvent(
@@ -186,7 +227,8 @@ export async function POST(req: NextRequest) {
         perfDate.startTime,
         perfDate.endTime,
         perfDate.label,
-        actor.calendarId
+        actor.calendarId,
+        description
       );
       if (eventId) {
         await prisma.casting.update({

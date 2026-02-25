@@ -5,6 +5,7 @@ import {
   createCastingEvent,
   deleteCalendarEvent,
 } from "@/lib/google-calendar";
+import { buildReservationDescription } from "@/lib/schedule";
 
 // GET /api/casting - 배역 배정 전체 조회
 export async function GET() {
@@ -151,6 +152,18 @@ export async function POST(req: NextRequest) {
 
   // 자동 캘린더 동기화 (실패해도 배정 응답에 영향 없음)
   try {
+    // MALE_LEAD인 경우 ReservationStatus 메모 조회하여 description 전달
+    let description: string | undefined;
+    if (roleType === "MALE_LEAD") {
+      const resMemo = await prisma.reservationStatus.findUnique({
+        where: { performanceDateId },
+        select: { reservationName: true, reservationContact: true },
+      });
+      if (resMemo?.reservationName && resMemo?.reservationContact) {
+        description = buildReservationDescription(resMemo.reservationName, resMemo.reservationContact);
+      }
+    }
+
     const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
     const eventId = await createCastingEvent(
       casting.roleType,
@@ -159,7 +172,8 @@ export async function POST(req: NextRequest) {
       casting.performanceDate.startTime,
       casting.performanceDate.endTime,
       casting.performanceDate.label,
-      actor!.calendarId
+      actor!.calendarId,
+      description
     );
     if (eventId) {
       await prisma.casting.update({

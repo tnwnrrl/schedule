@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateEventDescription } from "@/lib/google-calendar";
+import { buildReservationDescription } from "@/lib/schedule";
 
 interface Booking {
   customer_name: string;
   phone_number: string;
   booking_time: string; // "오후 3:15", "오전 10:45" 등
+  has_visitor?: boolean;
+  visitor_name?: string;
+  visitor_phone?: string;
 }
 
 // 한국어 시간 → 24시간제 변환 ("오후 3:15" → "15:15", "오전 10:45" → "10:45")
@@ -20,11 +24,6 @@ function parseKoreanTime(timeStr: string): string | null {
   if (period === "오전" && hour === 12) hour = 0;
 
   return `${String(hour).padStart(2, "0")}:${min}`;
-}
-
-// 예약 정보로 description 생성
-function buildDescription(name: string, contact: string): string {
-  return `예약자: ${name}\n연락처: ${contact}`;
 }
 
 // POST /api/casting/reservations
@@ -104,7 +103,22 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // 해당 회차의 MALE_LEAD 캐스팅 조회
+    // 방문자 우선 로직 (크롤러의 send_all_notifications과 동일 패턴)
+    const name = booking.has_visitor && booking.visitor_name
+      ? booking.visitor_name
+      : booking.customer_name;
+    const phone = booking.has_visitor && booking.visitor_phone
+      ? booking.visitor_phone
+      : booking.phone_number;
+
+    // ReservationStatus에 메모 저장 (캐스팅 독립)
+    await prisma.reservationStatus.upsert({
+      where: { performanceDateId: perfDate.id },
+      update: { reservationName: name, reservationContact: phone, hasReservation: true },
+      create: { performanceDateId: perfDate.id, hasReservation: true, reservationName: name, reservationContact: phone },
+    });
+
+    // MALE_LEAD 캐스팅이 있으면 캘린더 description 업데이트 (선택적)
     const casting = await prisma.casting.findUnique({
       where: {
         performanceDateId_roleType: {
@@ -117,31 +131,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (!casting) {
-      results.push({
-        booking_time: booking.booking_time,
-        success: false,
-        error: "남배우 캐스팅이 없습니다",
-      });
-      continue;
-    }
-
-    // 메모 업데이트
-    const description = buildDescription(
-      booking.customer_name,
-      booking.phone_number
-    );
-
-    await prisma.casting.update({
-      where: { id: casting.id },
-      data: {
-        reservationName: booking.customer_name,
-        reservationContact: booking.phone_number,
-      },
-    });
-
-    // Google Calendar 이벤트 description 업데이트
-    if (casting.calendarEventId) {
+    if (casting?.calendarEventId) {
+      const description = buildReservationDescription(name, phone);
       const calendarId =
         casting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
       if (calendarId) {
