@@ -12,6 +12,8 @@ interface ScheduleData {
   unavailable: Record<string, string[]>;
   actors: Array<{ id: string; name: string; roleType: string }>;
   overriddenActors?: string[];
+  reservations?: Record<string, boolean>;
+  reservationCheckedAt?: string | null;
 }
 
 export function DashboardCalendar() {
@@ -106,6 +108,8 @@ export function DashboardCalendar() {
     const perfs = data.performances[dateStr];
     if (!perfs || perfs.length === 0) return null;
 
+    const hasReservationData = data.reservations && Object.keys(data.reservations).length > 0;
+
     let filled = 0;
     const total = perfs.length * 2;
 
@@ -116,36 +120,53 @@ export function DashboardCalendar() {
       if (hasFemale) filled++;
       const maleAvail = getAvailableCount(p.id, "MALE_LEAD");
       const femaleAvail = getAvailableCount(p.id, "FEMALE_LEAD");
-      return { index: i + 1, hasMale, hasFemale, maleAvail, femaleAvail };
+      const hasReservation = hasReservationData ? data.reservations![p.id] : undefined;
+      return { index: i + 1, hasMale, hasFemale, maleAvail, femaleAvail, hasReservation };
     });
+
+    // 예약 있지만 미배정인 회차 수
+    const needsCastingCount = hasReservationData
+      ? slots.filter((s) => s.hasReservation === true && (!s.hasMale || !s.hasFemale)).length
+      : 0;
 
     return (
       <div className="space-y-0.5">
-        {slots.map((s) => (
-          <div key={s.index} className="flex items-center gap-0.5 leading-tight text-[10px]">
-            <span className="text-gray-400 w-2.5 shrink-0">{s.index}</span>
-            <span className={cn(
-              "w-3 text-center",
-              s.maleAvail === 0 ? "text-red-500 font-bold" : s.hasMale ? "text-blue-600" : "text-blue-400"
+        {slots.map((s) => {
+          const noReservation = hasReservationData && s.hasReservation === false;
+          return (
+            <div key={s.index} className={cn(
+              "flex items-center gap-0.5 leading-tight text-[10px]",
+              noReservation && "opacity-30"
             )}>
-              {s.maleAvail}
-            </span>
-            <span className="text-gray-300">/</span>
-            <span className={cn(
-              "w-3 text-center",
-              s.femaleAvail === 0 ? "text-red-500 font-bold" : s.hasFemale ? "text-pink-600" : "text-pink-400"
-            )}>
-              {s.femaleAvail}
-            </span>
-          </div>
-        ))}
-        <div className="mt-1 flex justify-center">
+              <span className="text-gray-400 w-2.5 shrink-0">{s.index}</span>
+              <span className={cn(
+                "w-3 text-center",
+                s.maleAvail === 0 ? "text-red-500 font-bold" : s.hasMale ? "text-blue-600" : "text-blue-400"
+              )}>
+                {s.maleAvail}
+              </span>
+              <span className="text-gray-300">/</span>
+              <span className={cn(
+                "w-3 text-center",
+                s.femaleAvail === 0 ? "text-red-500 font-bold" : s.hasFemale ? "text-pink-600" : "text-pink-400"
+              )}>
+                {s.femaleAvail}
+              </span>
+            </div>
+          );
+        })}
+        <div className="mt-1 flex flex-wrap justify-center gap-0.5">
           <Badge
             variant={filled === total ? "default" : filled > 0 ? "secondary" : "destructive"}
             className="text-[10px] px-1 py-0"
           >
             {filled}/{total}
           </Badge>
+          {needsCastingCount > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-400 text-amber-600">
+              배정필요 {needsCastingCount}
+            </Badge>
+          )}
         </div>
       </div>
     );

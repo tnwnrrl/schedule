@@ -70,14 +70,15 @@ model Actor {
 }
 
 model PerformanceDate {
-  id               String            @id @default(cuid())
-  date             DateTime
-  startTime        String
-  endTime          String?
-  label            String?
-  castings         Casting[]
-  unavailableDates UnavailableDate[]
-  createdAt        DateTime          @default(now())
+  id                String              @id @default(cuid())
+  date              DateTime
+  startTime         String
+  endTime           String?
+  label             String?
+  castings          Casting[]
+  unavailableDates  UnavailableDate[]
+  reservationStatus ReservationStatus?
+  createdAt         DateTime            @default(now())
 
   @@unique([date, startTime])
   @@index([date])
@@ -114,6 +115,14 @@ model Casting {
   @@unique([performanceDateId, roleType])
   @@index([performanceDateId])
   @@index([actorId])
+}
+
+model ReservationStatus {
+  id                String          @id @default(cuid())
+  performanceDateId String          @unique
+  hasReservation    Boolean         @default(false)
+  checkedAt         DateTime        @default(now()) @updatedAt
+  performanceDate   PerformanceDate @relation(fields: [performanceDateId], references: [id], onDelete: Cascade)
 }
 
 model ActorMonthOverride {

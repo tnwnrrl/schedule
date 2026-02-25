@@ -1,58 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { SHOW_TIMES } from "@/lib/constants";
-
-// 해당 월 PerformanceDate 보장 + 반환 (중복 조회 제거)
-async function ensureAndGetMonthPerformances(year: number, month: number) {
-  const startDate = new Date(Date.UTC(year, month - 1, 1));
-  const endDate = new Date(Date.UTC(year, month, 1));
-
-  const existing = await prisma.performanceDate.findMany({
-    where: { date: { gte: startDate, lt: endDate } },
-    orderBy: [{ date: "asc" }, { startTime: "asc" }],
-  });
-
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const expectedCount = daysInMonth * SHOW_TIMES.length;
-
-  // 이미 모두 존재하면 바로 반환 (가장 흔한 케이스 → DB 왕복 1회로 끝)
-  if (existing.length >= expectedCount) {
-    return existing;
-  }
-
-  // 부족한 레코드만 생성
-  const existingSet = new Set(
-    existing.map((e) => `${e.date.toISOString().split("T")[0]}_${e.startTime}`)
-  );
-
-  const toCreate: Array<{ date: Date; startTime: string }> = [];
-  for (let day = 1; day <= daysInMonth; day++) {
-    const utcDate = new Date(Date.UTC(year, month - 1, day));
-    const dateStr = utcDate.toISOString().split("T")[0];
-    for (const time of SHOW_TIMES) {
-      if (!existingSet.has(`${dateStr}_${time}`)) {
-        toCreate.push({ date: utcDate, startTime: time });
-      }
-    }
-  }
-
-  if (toCreate.length > 0) {
-    await prisma.$transaction(
-      toCreate.map((d) =>
-        prisma.performanceDate.create({ data: d })
-      )
-    );
-
-    // 생성 후 전체 다시 조회 (정렬 보장)
-    return prisma.performanceDate.findMany({
-      where: { date: { gte: startDate, lt: endDate } },
-      orderBy: [{ date: "asc" }, { startTime: "asc" }],
-    });
-  }
-
-  return existing;
-}
+import { ensureAndGetMonthPerformances } from "@/lib/schedule";
 
 // GET /api/schedule?year=2026&month=2
 export async function GET(req: NextRequest) {
@@ -94,7 +43,7 @@ export async function GET(req: NextRequest) {
   const perfDateIds = perfDates.map((p) => p.id);
   const isAdmin = session.user.role === "ADMIN";
 
-  const [castingRows, unavailableRows, ...overrideResult] = await Promise.all([
+  const [castingRows, unavailableRows, reservationRows, ...overrideResult] = await Promise.all([
     prisma.casting.findMany({
       where: { performanceDateId: { in: perfDateIds } },
       include: {
@@ -103,6 +52,10 @@ export async function GET(req: NextRequest) {
     }),
     prisma.unavailableDate.findMany({
       where: { performanceDateId: { in: perfDateIds } },
+    }),
+    prisma.reservationStatus.findMany({
+      where: { performanceDateId: { in: perfDateIds } },
+      select: { performanceDateId: true, hasReservation: true, checkedAt: true },
     }),
     ...(isAdmin
       ? [prisma.actorMonthOverride.findMany({
@@ -131,13 +84,23 @@ export async function GET(req: NextRequest) {
     unavailable[u.actorId].push(u.performanceDateId);
   }
 
+  // ReservationStatus 매핑
+  const reservations: Record<string, boolean> = {};
+  let reservationCheckedAt: string | null = null;
+  for (const r of reservationRows) {
+    reservations[r.performanceDateId] = r.hasReservation;
+    if (!reservationCheckedAt || r.checkedAt > new Date(reservationCheckedAt)) {
+      reservationCheckedAt = r.checkedAt.toISOString();
+    }
+  }
+
   // ADMIN일 때 overriddenActors 포함
   const overriddenActors = isAdmin && overrideResult[0]
     ? (overrideResult[0] as Array<{ actorId: string }>).map((o) => o.actorId)
     : undefined;
 
   return NextResponse.json(
-    { performances, castings, unavailable, actors, ...(overriddenActors !== undefined && { overriddenActors }) },
+    { performances, castings, unavailable, actors, reservations, reservationCheckedAt, ...(overriddenActors !== undefined && { overriddenActors }) },
     {
       headers: {
         "Cache-Control": "private, s-maxage=30, stale-while-revalidate=60",
