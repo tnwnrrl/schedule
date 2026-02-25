@@ -22,21 +22,29 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { year, month, reservations } = body as {
-    year: number;
-    month: number;
+  const { months, reservations } = body as {
+    months: Array<{ year: number; month: number }>;
     reservations: Record<string, string[]>; // { "2026-02-25": ["15:15", "17:30"] }
   };
 
-  if (!year || !month || !reservations) {
+  // 하위 호환: 기존 year/month 단일 형식도 지원
+  const monthList =
+    months ??
+    (body.year && body.month ? [{ year: body.year, month: body.month }] : null);
+
+  if (!monthList || monthList.length === 0 || !reservations) {
     return NextResponse.json(
-      { error: "year, month, reservations는 필수입니다" },
+      { error: "months(또는 year+month)와 reservations는 필수입니다" },
       { status: 400 }
     );
   }
 
-  // 해당 월 PerformanceDate 보장 + 조회
-  const perfDates = await ensureAndGetMonthPerformances(year, month);
+  // 여러 달 PerformanceDate 보장 + 조회
+  const allPerfDates = (
+    await Promise.all(
+      monthList.map((m) => ensureAndGetMonthPerformances(m.year, m.month))
+    )
+  ).flat();
 
   // 요청 데이터에서 예약 유무 Set 구성 ("2026-02-25_15:15" 형태)
   const reservedSet = new Set<string>();
@@ -46,9 +54,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 월 전체 PerformanceDate에 대해 ReservationStatus upsert (단일 트랜잭션)
+  // 전체 PerformanceDate에 대해 ReservationStatus upsert (단일 트랜잭션)
   let reservedCount = 0;
-  const upserts = perfDates.map((p) => {
+  const upserts = allPerfDates.map((p) => {
     const dateStr = p.date.toISOString().split("T")[0];
     const hasReservation = reservedSet.has(`${dateStr}_${p.startTime}`);
     if (hasReservation) reservedCount++;
@@ -67,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    total: perfDates.length,
+    total: allPerfDates.length,
     reserved: reservedCount,
   });
 }
