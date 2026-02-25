@@ -314,6 +314,8 @@ export function CastingCalendar() {
     if (!perfs || perfs.length === 0) return null;
 
     const hasReservationData = data.reservations && Object.keys(data.reservations).length > 0;
+    const today = new Date().toISOString().split("T")[0];
+    const isPast = dateStr < today;
 
     const slots = perfs.map((p) => {
       const male = data.castings[`${p.id}_MALE_LEAD`];
@@ -321,16 +323,16 @@ export function CastingCalendar() {
       const maleAvailable = !male ? getAvailableActors(p.id, "MALE_LEAD").length > 0 : true;
       const femaleAvailable = !female ? getAvailableActors(p.id, "FEMALE_LEAD").length > 0 : true;
       const hasReservation = hasReservationData ? data.reservations![p.id] : undefined;
-      const cancellationConflict = hasReservation === false && (!!male || !!female);
-      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation, cancellationConflict };
+      const cancellationConflict = !isPast && hasReservation === false && (!!male || !!female);
+      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation, cancellationConflict, isPast };
     });
 
     // 요약: 배정된 슬롯 수
     const filled = slots.reduce((acc, s) => acc + (s.male ? 1 : 0) + (s.female ? 1 : 0), 0);
     const total = slots.length * 2;
 
-    // 예약 있지만 미배정인 회차 수
-    const needsCastingCount = hasReservationData
+    // 예약 있지만 미배정인 회차 수 (미래만)
+    const needsCastingCount = hasReservationData && !isPast
       ? slots.filter((s) => s.hasReservation === true && (!s.male || !s.female)).length
       : 0;
 
@@ -345,11 +347,11 @@ export function CastingCalendar() {
           const mName = s.male?.actorName;
           const fName = s.female?.actorName;
           const noReservation = hasReservationData && s.hasReservation === false;
-          const needsCasting = s.hasReservation === true && (!s.male || !s.female);
+          const needsCasting = !isPast && s.hasReservation === true && (!s.male || !s.female);
           return (
             <div key={i} className={cn(
               "flex items-center gap-0.5 leading-tight",
-              s.cancellationConflict ? "bg-orange-50 rounded px-0.5 -mx-0.5" : noReservation && "opacity-30"
+              s.cancellationConflict ? "bg-orange-50 rounded px-0.5 -mx-0.5" : noReservation && !isPast && "opacity-30"
             )}>
               <span className="text-[10px] text-gray-400 w-3 shrink-0 flex items-center">
                 {i + 1}
@@ -449,7 +451,8 @@ export function CastingCalendar() {
                 const noReservation = reservationState === false;
                 const maleCasting = data.castings[`${perf.id}_MALE_LEAD`];
                 const femaleCasting = data.castings[`${perf.id}_FEMALE_LEAD`];
-                const cancellationConflict = noReservation && (!!maleCasting || !!femaleCasting);
+                const dialogIsPast = selectedDate < new Date().toISOString().split("T")[0];
+                const cancellationConflict = !dialogIsPast && noReservation && (!!maleCasting || !!femaleCasting);
 
                 return (
                   <div key={perf.id} className={cn(
@@ -461,19 +464,23 @@ export function CastingCalendar() {
                         {SHOW_TIME_LABELS[perf.startTime as keyof typeof SHOW_TIME_LABELS] || perf.startTime}
                       </span>
                       {hasReservationData && (
-                        reservationState === true
-                          ? <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-300" variant="outline">예약</Badge>
-                          : reservationState === false
-                            ? cancellationConflict
-                              ? <>
-                                  <Badge className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 border-orange-400" variant="outline">
-                                    <AlertTriangle className="h-3 w-3 mr-0.5" />
-                                    예약 취소
-                                  </Badge>
-                                  <span className="text-[10px] text-orange-600">배정 해제를 검토하세요</span>
-                                </>
-                              : <Badge className="text-[10px] px-1.5 py-0 bg-red-50 text-red-500 border-red-200" variant="outline">예약 없음</Badge>
-                            : <Badge className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-gray-200" variant="outline">미확인</Badge>
+                        dialogIsPast
+                          ? (!!maleCasting || !!femaleCasting)
+                            ? <Badge className="text-[10px] px-1.5 py-0 bg-gray-100 text-gray-500 border-gray-300" variant="outline">완료</Badge>
+                            : <Badge className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-gray-200" variant="outline">종료</Badge>
+                          : reservationState === true
+                            ? <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-300" variant="outline">예약</Badge>
+                            : reservationState === false
+                              ? cancellationConflict
+                                ? <>
+                                    <Badge className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 border-orange-400" variant="outline">
+                                      <AlertTriangle className="h-3 w-3 mr-0.5" />
+                                      예약 취소
+                                    </Badge>
+                                    <span className="text-[10px] text-orange-600">배정 해제를 검토하세요</span>
+                                  </>
+                                : <Badge className="text-[10px] px-1.5 py-0 bg-red-50 text-red-500 border-red-200" variant="outline">예약 없음</Badge>
+                              : <Badge className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-gray-200" variant="outline">미확인</Badge>
                       )}
                     </div>
 
