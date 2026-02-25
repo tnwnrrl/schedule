@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import {
   createCastingEvent,
   deleteCalendarEvent,
+  mirrorCastingToAllCalendar,
+  deleteFromAllCalendar,
 } from "@/lib/google-calendar";
 import { buildReservationDescription } from "@/lib/schedule";
 
@@ -70,6 +72,13 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+    if (existing?.allCalendarEventId) {
+      try {
+        await deleteFromAllCalendar(existing.allCalendarEventId);
+      } catch (e) {
+        console.error("배정 해제 전체캘린더 이벤트 삭제 실패:", e);
+      }
+    }
 
     await prisma.casting.deleteMany({
       where: { performanceDateId, roleType },
@@ -128,6 +137,13 @@ export async function POST(req: NextRequest) {
       }
     }
   }
+  if (existingCasting?.allCalendarEventId) {
+    try {
+      await deleteFromAllCalendar(existingCasting.allCalendarEventId);
+    } catch (e) {
+      console.error("기존 전체캘린더 이벤트 삭제 실패:", e);
+    }
+  }
 
   // upsert: 해당 공연일의 해당 역할에 배정
   const casting = await prisma.casting.upsert({
@@ -176,9 +192,25 @@ export async function POST(req: NextRequest) {
       description
     );
     if (eventId) {
+      // 전체배우일정 캘린더에도 미러링
+      let allEventId: string | null = null;
+      try {
+        allEventId = await mirrorCastingToAllCalendar(
+          casting.roleType,
+          casting.actor.name,
+          dateStr,
+          casting.performanceDate.startTime,
+          casting.performanceDate.endTime,
+          casting.performanceDate.label,
+          description
+        );
+      } catch (e) {
+        console.error("전체캘린더 미러링 실패:", e);
+      }
+
       await prisma.casting.update({
         where: { id: casting.id },
-        data: { synced: true, calendarEventId: eventId },
+        data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
       });
     }
   } catch (e) {

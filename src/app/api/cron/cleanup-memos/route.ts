@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateEventDescription } from "@/lib/google-calendar";
+import { updateEventDescription, updateAllCalendarDescription } from "@/lib/google-calendar";
 
 // GET /api/cron/cleanup-memos - 과거 공연 메모 자동 정리 (Vercel Cron)
 export async function GET(req: NextRequest) {
@@ -79,6 +79,10 @@ export async function GET(req: NextRequest) {
           null
         ).catch(() => false);
         if (updated) calendarUpdated++;
+      }
+      // 전체배우일정 캘린더에서도 description 제거
+      if (casting.allCalendarEventId) {
+        await updateAllCalendarDescription(casting.allCalendarEventId, null).catch(() => {});
       }
     }
   }

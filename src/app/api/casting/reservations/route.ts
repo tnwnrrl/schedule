@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateEventDescription } from "@/lib/google-calendar";
+import { updateEventDescription, updateAllCalendarDescription } from "@/lib/google-calendar";
 import { buildReservationDescription, resolveBookingContact } from "@/lib/schedule";
 
 interface Booking {
@@ -138,6 +138,13 @@ export async function POST(req: NextRequest) {
         ).catch((e) =>
           console.error("캘린더 description 업데이트 실패:", e)
         );
+      }
+      // 전체배우일정 캘린더에도 description 업데이트
+      if (casting.allCalendarEventId) {
+        await updateAllCalendarDescription(
+          casting.allCalendarEventId,
+          description
+        ).catch(() => {});
       }
     }
 

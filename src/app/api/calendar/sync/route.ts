@@ -5,6 +5,9 @@ import {
   createUnavailableEvent,
   deleteCalendarEvent,
   createCastingEvent,
+  mirrorCastingToAllCalendar,
+  mirrorUnavailableToAllCalendar,
+  deleteFromAllCalendar,
 } from "@/lib/google-calendar";
 import { buildReservationDescription } from "@/lib/schedule";
 
@@ -34,9 +37,15 @@ export async function POST() {
     );
 
     if (eventId) {
+      // 전체배우일정 캘린더에도 미러링
+      let allEventId: string | null = null;
+      try {
+        allEventId = await mirrorUnavailableToAllCalendar(item.actor.name, dateStr);
+      } catch {}
+
       await prisma.unavailableDate.update({
         where: { id: item.id },
-        data: { synced: true, calendarEventId: eventId },
+        data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
       });
       results.unavailable.synced++;
     } else {
@@ -79,6 +88,9 @@ export async function POST() {
         await deleteCalendarEvent(calendarId, casting.calendarEventId, true);
       }
     }
+    if (casting.allCalendarEventId) {
+      await deleteFromAllCalendar(casting.allCalendarEventId).catch(() => {});
+    }
 
     // MALE_LEAD인 경우 ReservationStatus 메모로 description 생성
     let description: string | undefined;
@@ -101,9 +113,23 @@ export async function POST() {
     );
 
     if (eventId) {
+      // 전체배우일정 캘린더에도 미러링
+      let allEventId: string | null = null;
+      try {
+        allEventId = await mirrorCastingToAllCalendar(
+          casting.roleType,
+          casting.actor.name,
+          dateStr,
+          casting.performanceDate.startTime,
+          casting.performanceDate.endTime,
+          casting.performanceDate.label,
+          description
+        );
+      } catch {}
+
       await prisma.casting.update({
         where: { id: casting.id },
-        data: { synced: true, calendarEventId: eventId },
+        data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
       });
       results.casting.synced++;
     } else {

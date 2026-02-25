@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import {
   createCastingEvent,
   deleteCalendarEvent,
+  mirrorCastingToAllCalendar,
+  deleteFromAllCalendar,
 } from "@/lib/google-calendar";
 import { buildReservationDescription } from "@/lib/schedule";
 
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
       : Promise.resolve([]),
     prisma.casting.findMany({
       where: { performanceDateId: { in: perfDateIds } },
-      select: { performanceDateId: true, roleType: true, calendarEventId: true, actorId: true },
+      select: { performanceDateId: true, roleType: true, calendarEventId: true, allCalendarEventId: true, actorId: true },
     }),
   ]);
 
@@ -61,14 +63,14 @@ export async function POST(req: NextRequest) {
     unavailables.map((u) => `${u.actorId}_${u.performanceDateId}`)
   );
   const existingCastingMap = new Map(
-    existingCastings.map((c) => [`${c.performanceDateId}_${c.roleType}`, { calendarEventId: c.calendarEventId, actorId: c.actorId }])
+    existingCastings.map((c) => [`${c.performanceDateId}_${c.roleType}`, { calendarEventId: c.calendarEventId, allCalendarEventId: c.allCalendarEventId, actorId: c.actorId }])
   );
 
   // 트랜잭션으로 일괄 처리
   const operations = [];
   // 캘린더 동기화 대상 추적
   const syncTargets: Array<{ performanceDateId: string; roleType: string; actorId: string }> = [];
-  const deleteTargets: Array<{ roleType: string; calendarEventId: string; actorId?: string }> = [];
+  const deleteTargets: Array<{ roleType: string; calendarEventId: string; allCalendarEventId?: string | null; actorId?: string }> = [];
   // ReservationStatus 메모 upsert 대상
   const memoUpserts: Array<{ performanceDateId: string; name: string | null; contact: string | null }> = [];
 
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
     // 기존 캘린더 이벤트 삭제 대상 추적
     const existing = existingCastingMap.get(key);
     if (existing?.calendarEventId) {
-      deleteTargets.push({ roleType: change.roleType, calendarEventId: existing.calendarEventId, actorId: existing.actorId });
+      deleteTargets.push({ roleType: change.roleType, calendarEventId: existing.calendarEventId, allCalendarEventId: existing.allCalendarEventId, actorId: existing.actorId });
     }
 
     // 메모 변경사항이 있으면 ReservationStatus upsert 대상으로 추적
@@ -184,6 +186,9 @@ export async function POST(req: NextRequest) {
       if (calId) {
         await deleteCalendarEvent(calId, dt.calendarEventId, true).catch(() => {});
       }
+      if (dt.allCalendarEventId) {
+        await deleteFromAllCalendar(dt.allCalendarEventId).catch(() => {});
+      }
     }
 
     // 새 이벤트 생성 (초대 알림)
@@ -231,6 +236,20 @@ export async function POST(req: NextRequest) {
         description
       );
       if (eventId) {
+        // 전체배우일정 캘린더에도 미러링
+        let allEventId: string | null = null;
+        try {
+          allEventId = await mirrorCastingToAllCalendar(
+            st.roleType,
+            actor.name,
+            dateStr,
+            perfDate.startTime,
+            perfDate.endTime,
+            perfDate.label,
+            description
+          );
+        } catch {}
+
         await prisma.casting.update({
           where: {
             performanceDateId_roleType: {
@@ -238,7 +257,7 @@ export async function POST(req: NextRequest) {
               roleType: st.roleType,
             },
           },
-          data: { synced: true, calendarEventId: eventId },
+          data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
         });
       }
     }

@@ -216,6 +216,94 @@ function addHours(time: string, hours: number): string {
   return `${String(newH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+// === 전체배우일정 캘린더 미러링 ===
+
+// 캐스팅 이벤트를 전체배우일정 캘린더에도 생성
+export async function mirrorCastingToAllCalendar(
+  roleType: string,
+  actorName: string,
+  date: string,
+  startTime: string,
+  endTime?: string | null,
+  label?: string | null,
+  description?: string | null
+): Promise<string | null> {
+  const calendarId = process.env.CALENDAR_ALL_ACTORS;
+  if (!calendarId) return null;
+
+  try {
+    const calendar = getCalendar();
+    const summary = `${actorName}${label ? ` (${label})` : ""}`;
+    const startDateTime = `${date}T${startTime}:00`;
+    const endDateTime = endTime
+      ? `${date}T${endTime}:00`
+      : `${date}T${addHours(startTime, 2)}:00`;
+
+    const requestBody: Record<string, unknown> = {
+      summary,
+      start: { dateTime: startDateTime, timeZone: "Asia/Seoul" },
+      end: { dateTime: endDateTime, timeZone: "Asia/Seoul" },
+      colorId: roleType === "MALE_LEAD" ? "9" : "6",
+    };
+    if (description) {
+      requestBody.description = description;
+    }
+
+    const res = await calendar.events.insert({ calendarId, requestBody });
+    return res.data.id || null;
+  } catch (error) {
+    console.error("전체배우일정 캐스팅 이벤트 생성 실패:", error);
+    return null;
+  }
+}
+
+// 불가일정 이벤트를 전체배우일정 캘린더에도 생성
+export async function mirrorUnavailableToAllCalendar(
+  actorName: string,
+  date: string
+): Promise<string | null> {
+  const calendarId = process.env.CALENDAR_ALL_ACTORS;
+  if (!calendarId) return null;
+
+  try {
+    return await createUnavailableEvent(calendarId, actorName, date);
+  } catch (error) {
+    console.error("전체배우일정 불가일정 이벤트 생성 실패:", error);
+    return null;
+  }
+}
+
+// 전체배우일정 캘린더에서 이벤트 삭제
+export async function deleteFromAllCalendar(
+  eventId: string
+): Promise<boolean> {
+  const calendarId = process.env.CALENDAR_ALL_ACTORS;
+  if (!calendarId) return false;
+
+  try {
+    return await deleteCalendarEvent(calendarId, eventId);
+  } catch (error) {
+    console.error("전체배우일정 이벤트 삭제 실패:", error);
+    return false;
+  }
+}
+
+// 전체배우일정 캘린더 이벤트 description 업데이트
+export async function updateAllCalendarDescription(
+  eventId: string,
+  description: string | null
+): Promise<boolean> {
+  const calendarId = process.env.CALENDAR_ALL_ACTORS;
+  if (!calendarId) return false;
+
+  try {
+    return await updateEventDescription(calendarId, eventId, description);
+  } catch (error) {
+    console.error("전체배우일정 description 업데이트 실패:", error);
+    return false;
+  }
+}
+
 // 전체 동기화 (수동 트리거)
 export async function syncAllToCalendar() {
   // 이 함수는 API 엔드포인트에서 호출됨

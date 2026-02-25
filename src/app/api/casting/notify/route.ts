@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import {
   createCastingEvent,
   deleteCalendarEvent,
+  mirrorCastingToAllCalendar,
+  deleteFromAllCalendar,
 } from "@/lib/google-calendar";
 
 // POST /api/casting/notify - 알림 재발송 (기존 이벤트 삭제 → 재생성)
@@ -63,6 +65,9 @@ export async function POST(req: NextRequest) {
           await deleteCalendarEvent(calendarId, casting.calendarEventId, false);
         }
       }
+      if (casting.allCalendarEventId) {
+        await deleteFromAllCalendar(casting.allCalendarEventId).catch(() => {});
+      }
 
       // 새 이벤트 생성
       const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
@@ -77,9 +82,22 @@ export async function POST(req: NextRequest) {
       );
 
       if (eventId) {
+        // 전체배우일정 캘린더에도 미러링
+        let allEventId: string | null = null;
+        try {
+          allEventId = await mirrorCastingToAllCalendar(
+            casting.roleType,
+            casting.actor.name,
+            dateStr,
+            casting.performanceDate.startTime,
+            casting.performanceDate.endTime,
+            casting.performanceDate.label
+          );
+        } catch {}
+
         await prisma.casting.update({
           where: { id: casting.id },
-          data: { synced: true, calendarEventId: eventId },
+          data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
         });
         sent++;
       } else {
