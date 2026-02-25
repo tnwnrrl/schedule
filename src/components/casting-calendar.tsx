@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
+import { RefreshCw } from "lucide-react";
 
 interface Performance {
   id: string;
@@ -68,6 +69,7 @@ export function CastingCalendar() {
   const [dialogMemos, setDialogMemos] = useState<Record<string, { name: string; contact: string }>>({});
   const [saving, setSaving] = useState(false);
   const [notifying, setNotifying] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const dialogCloseRef = useRef(0);
 
   const fetchData = useCallback(async (y: number, m: number) => {
@@ -201,6 +203,24 @@ export function CastingCalendar() {
       toast.error("저장 실패");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSyncReservations = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/reservations/trigger-sync", { method: "POST" });
+      const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.error || "동기화 실패");
+        return;
+      }
+      toast.success("예약 동기화 완료");
+      await fetchData(year, month);
+    } catch {
+      toast.error("동기화 요청 실패");
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -378,11 +398,23 @@ export function CastingCalendar() {
         renderCell={renderCell}
         onCellClick={handleCellClick}
       />
-      {data?.reservationCheckedAt && (
-        <p className="text-xs text-gray-400 text-center mt-1">
-          예약 현황: {formatDistanceToNow(new Date(data.reservationCheckedAt), { addSuffix: true, locale: ko })}
-        </p>
-      )}
+      <div className="flex items-center justify-center gap-2 mt-1">
+        {data?.reservationCheckedAt && (
+          <p className="text-xs text-gray-400">
+            예약 현황: {formatDistanceToNow(new Date(data.reservationCheckedAt), { addSuffix: true, locale: ko })}
+          </p>
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleSyncReservations}
+          disabled={syncing}
+          className="h-6 px-2 text-xs text-gray-400 hover:text-gray-600"
+        >
+          <RefreshCw className={cn("h-3 w-3 mr-1", syncing && "animate-spin")} />
+          {syncing ? "동기화 중..." : "예약 동기화"}
+        </Button>
+      </div>
 
       {/* 배역 배정 Dialog */}
       <Dialog open={!!selectedDate} onOpenChange={(open) => {
