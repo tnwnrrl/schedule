@@ -7,6 +7,22 @@ export function buildReservationDescription(name: string, contact: string): stri
   return `예약자: ${name}\n연락처: ${contact}`;
 }
 
+export function buildCastingDescription(options: {
+  partnerName?: string | null;
+  reservationName?: string | null;
+  reservationContact?: string | null;
+}): string | undefined {
+  const parts: string[] = [];
+  if (options.partnerName) {
+    parts.push(`상대역: ${options.partnerName}`);
+  }
+  if (options.reservationName && options.reservationContact) {
+    parts.push(`예약자: ${options.reservationName}`);
+    parts.push(`연락처: ${options.reservationContact}`);
+  }
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 export interface BookingDetail {
   booking_time: string;
   customer_name: string;

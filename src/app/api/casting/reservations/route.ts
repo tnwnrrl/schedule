@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateEventDescription, updateAllCalendarDescription } from "@/lib/google-calendar";
-import { buildReservationDescription, resolveBookingContact } from "@/lib/schedule";
+import { buildCastingDescription, resolveBookingContact } from "@/lib/schedule";
 
 interface Booking {
   customer_name: string;
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
       create: { performanceDateId: perfDate.id, hasReservation: true, reservationName: name, reservationContact: phone },
     });
 
-    // MALE_LEAD 캐스팅이 있으면 캘린더 description 업데이트 (선택적)
+    // MALE_LEAD 캐스팅이 있으면 캘린더 description 업데이트 (상대역 + 예약메모)
     const casting = await prisma.casting.findUnique({
       where: {
         performanceDateId_roleType: {
@@ -127,10 +127,19 @@ export async function POST(req: NextRequest) {
     });
 
     if (casting?.calendarEventId) {
-      const description = buildReservationDescription(name, phone);
+      // 상대역 조회
+      const femaleCasting = await prisma.casting.findUnique({
+        where: { performanceDateId_roleType: { performanceDateId: perfDate.id, roleType: "FEMALE_LEAD" } },
+        include: { actor: { select: { name: true } } },
+      });
+      const description = buildCastingDescription({
+        partnerName: femaleCasting?.actor?.name,
+        reservationName: name,
+        reservationContact: phone,
+      });
       const calendarId =
         casting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
-      if (calendarId) {
+      if (calendarId && description) {
         await updateEventDescription(
           calendarId,
           casting.calendarEventId,
@@ -140,7 +149,7 @@ export async function POST(req: NextRequest) {
         );
       }
       // 전체배우일정 캘린더에도 description 업데이트
-      if (casting.allCalendarEventId) {
+      if (casting.allCalendarEventId && description) {
         await updateAllCalendarDescription(
           casting.allCalendarEventId,
           description

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateEventDescription, updateAllCalendarDescription } from "@/lib/google-calendar";
+import { buildCastingDescription } from "@/lib/schedule";
 
 // GET /api/cron/cleanup-memos - 과거 공연 메모 자동 정리 (Vercel Cron)
 export async function GET(req: NextRequest) {
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, cleaned: 0 });
   }
 
-  // 해당 회차의 MALE_LEAD 캐스팅 조회 (캘린더 이벤트 description 제거용)
+  // 해당 회차의 MALE_LEAD 캐스팅 조회 (캘린더 이벤트 description에서 예약메모 제거, 상대역 유지)
   const perfDateIds = reservationsWithMemos.map((r) => r.performanceDateId);
   const maleCastings = await prisma.casting.findMany({
     where: {
@@ -51,6 +52,15 @@ export async function GET(req: NextRequest) {
     },
   });
   const castingByPerfDate = new Map(maleCastings.map((c) => [c.performanceDateId, c]));
+
+  // 상대역(FEMALE_LEAD) 이름 조회 (description에 유지)
+  const femaleCastings = perfDateIds.length > 0
+    ? await prisma.casting.findMany({
+        where: { performanceDateId: { in: perfDateIds }, roleType: "FEMALE_LEAD" },
+        include: { actor: { select: { name: true } } },
+      })
+    : [];
+  const femaleNameMap = new Map(femaleCastings.map((c) => [c.performanceDateId, c.actor.name]));
 
   let cleaned = 0;
   let calendarUpdated = 0;
@@ -66,9 +76,11 @@ export async function GET(req: NextRequest) {
     });
     cleaned++;
 
-    // Google Calendar 이벤트 description 제거
+    // Google Calendar description에서 예약메모 제거 (상대역 유지)
     const casting = castingByPerfDate.get(reservation.performanceDateId);
     if (casting?.calendarEventId) {
+      const partnerName = femaleNameMap.get(reservation.performanceDateId);
+      const desc = buildCastingDescription({ partnerName }) || null;
       const calendarId =
         casting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
 
@@ -76,13 +88,13 @@ export async function GET(req: NextRequest) {
         const updated = await updateEventDescription(
           calendarId,
           casting.calendarEventId,
-          null
+          desc
         ).catch(() => false);
         if (updated) calendarUpdated++;
       }
-      // 전체배우일정 캘린더에서도 description 제거
+      // 전체배우일정 캘린더에서도 동일 처리
       if (casting.allCalendarEventId) {
-        await updateAllCalendarDescription(casting.allCalendarEventId, null).catch(() => {});
+        await updateAllCalendarDescription(casting.allCalendarEventId, desc).catch(() => {});
       }
     }
   }

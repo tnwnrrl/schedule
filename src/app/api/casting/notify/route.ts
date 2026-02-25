@@ -7,6 +7,7 @@ import {
   mirrorCastingToAllCalendar,
   deleteFromAllCalendar,
 } from "@/lib/google-calendar";
+import { buildCastingDescription } from "@/lib/schedule";
 
 // POST /api/casting/notify - 알림 재발송 (기존 이벤트 삭제 → 재생성)
 export async function POST(req: NextRequest) {
@@ -71,6 +72,29 @@ export async function POST(req: NextRequest) {
 
       // 새 이벤트 생성
       const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
+
+      // MALE_LEAD: 상대역(항상) + 예약메모(당일만)
+      let description: string | undefined;
+      if (casting.roleType === "MALE_LEAD") {
+        const femaleCasting = await prisma.casting.findUnique({
+          where: { performanceDateId_roleType: { performanceDateId: casting.performanceDateId, roleType: "FEMALE_LEAD" } },
+          include: { actor: { select: { name: true } } },
+        });
+        const partnerName = femaleCasting?.actor?.name;
+        const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+        let resName: string | null | undefined;
+        let resContact: string | null | undefined;
+        if (dateStr === kstToday) {
+          const resMemo = await prisma.reservationStatus.findUnique({
+            where: { performanceDateId: casting.performanceDateId },
+            select: { reservationName: true, reservationContact: true },
+          });
+          resName = resMemo?.reservationName;
+          resContact = resMemo?.reservationContact;
+        }
+        description = buildCastingDescription({ partnerName, reservationName: resName, reservationContact: resContact });
+      }
+
       const eventId = await createCastingEvent(
         casting.roleType,
         casting.actor.name,
@@ -78,7 +102,8 @@ export async function POST(req: NextRequest) {
         casting.performanceDate.startTime,
         casting.performanceDate.endTime,
         casting.performanceDate.label,
-        casting.actor.calendarId
+        casting.actor.calendarId,
+        description
       );
 
       if (eventId) {
@@ -91,7 +116,8 @@ export async function POST(req: NextRequest) {
             dateStr,
             casting.performanceDate.startTime,
             casting.performanceDate.endTime,
-            casting.performanceDate.label
+            casting.performanceDate.label,
+            description
           );
         } catch {}
 

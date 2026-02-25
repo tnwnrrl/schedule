@@ -6,8 +6,10 @@ import {
   deleteCalendarEvent,
   mirrorCastingToAllCalendar,
   deleteFromAllCalendar,
+  updateEventDescription,
+  updateAllCalendarDescription,
 } from "@/lib/google-calendar";
-import { buildReservationDescription } from "@/lib/schedule";
+import { buildCastingDescription } from "@/lib/schedule";
 
 // GET /api/casting - 배역 배정 전체 조회
 export async function GET() {
@@ -83,6 +85,41 @@ export async function POST(req: NextRequest) {
     await prisma.casting.deleteMany({
       where: { performanceDateId, roleType },
     });
+
+    // FEMALE_LEAD 해제 시 MALE_LEAD description에서 상대역 제거
+    if (roleType === "FEMALE_LEAD") {
+      try {
+        const maleCasting = await prisma.casting.findUnique({
+          where: { performanceDateId_roleType: { performanceDateId, roleType: "MALE_LEAD" } },
+          include: { actor: { select: { calendarId: true } }, performanceDate: true },
+        });
+        if (maleCasting?.calendarEventId) {
+          const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+          const pds = maleCasting.performanceDate.date.toISOString().split("T")[0];
+          let resName: string | null | undefined;
+          let resContact: string | null | undefined;
+          if (pds === kstToday) {
+            const resMemo = await prisma.reservationStatus.findUnique({
+              where: { performanceDateId },
+              select: { reservationName: true, reservationContact: true },
+            });
+            resName = resMemo?.reservationName;
+            resContact = resMemo?.reservationContact;
+          }
+          const desc = buildCastingDescription({ reservationName: resName, reservationContact: resContact });
+          const calId = maleCasting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
+          if (calId) {
+            await updateEventDescription(calId, maleCasting.calendarEventId, desc || null);
+          }
+          if (maleCasting.allCalendarEventId) {
+            await updateAllCalendarDescription(maleCasting.allCalendarEventId, desc || null);
+          }
+        }
+      } catch (e) {
+        console.error("FEMALE_LEAD 해제 후 MALE_LEAD description 갱신 실패:", e);
+      }
+    }
+
     return NextResponse.json({ success: true, action: "removed" });
   }
 
@@ -168,9 +205,16 @@ export async function POST(req: NextRequest) {
 
   // 자동 캘린더 동기화 (실패해도 배정 응답에 영향 없음)
   try {
-    // MALE_LEAD인 경우 공연 당일에만 ReservationStatus 메모 → 캘린더 description
+    // MALE_LEAD: 상대역(항상) + 예약메모(당일만) → description
     let description: string | undefined;
     if (roleType === "MALE_LEAD") {
+      const femaleCasting = await prisma.casting.findUnique({
+        where: { performanceDateId_roleType: { performanceDateId, roleType: "FEMALE_LEAD" } },
+        include: { actor: { select: { name: true } } },
+      });
+      const partnerName = femaleCasting?.actor?.name;
+      let resName: string | null | undefined;
+      let resContact: string | null | undefined;
       const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
       const perfDateStr = casting.performanceDate.date.toISOString().split("T")[0];
       if (perfDateStr === kstToday) {
@@ -178,10 +222,10 @@ export async function POST(req: NextRequest) {
           where: { performanceDateId },
           select: { reservationName: true, reservationContact: true },
         });
-        if (resMemo?.reservationName && resMemo?.reservationContact) {
-          description = buildReservationDescription(resMemo.reservationName, resMemo.reservationContact);
-        }
+        resName = resMemo?.reservationName;
+        resContact = resMemo?.reservationContact;
       }
+      description = buildCastingDescription({ partnerName, reservationName: resName, reservationContact: resContact });
     }
 
     const dateStr = casting.performanceDate.date.toISOString().split("T")[0];
@@ -219,6 +263,40 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) {
     console.error("배정 후 캘린더 자동 동기화 실패:", e);
+  }
+
+  // FEMALE_LEAD 배정 시 기존 MALE_LEAD의 description에 상대역 추가
+  if (roleType === "FEMALE_LEAD") {
+    try {
+      const maleCasting = await prisma.casting.findUnique({
+        where: { performanceDateId_roleType: { performanceDateId, roleType: "MALE_LEAD" } },
+        include: { actor: { select: { calendarId: true } }, performanceDate: true },
+      });
+      if (maleCasting?.calendarEventId) {
+        const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
+        const pds = maleCasting.performanceDate.date.toISOString().split("T")[0];
+        let resName: string | null | undefined;
+        let resContact: string | null | undefined;
+        if (pds === kstToday) {
+          const resMemo = await prisma.reservationStatus.findUnique({
+            where: { performanceDateId },
+            select: { reservationName: true, reservationContact: true },
+          });
+          resName = resMemo?.reservationName;
+          resContact = resMemo?.reservationContact;
+        }
+        const maleDesc = buildCastingDescription({ partnerName: actor!.name, reservationName: resName, reservationContact: resContact });
+        const calId = maleCasting.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
+        if (calId) {
+          await updateEventDescription(calId, maleCasting.calendarEventId, maleDesc || null);
+        }
+        if (maleCasting.allCalendarEventId) {
+          await updateAllCalendarDescription(maleCasting.allCalendarEventId, maleDesc || null);
+        }
+      }
+    } catch (e) {
+      console.error("FEMALE_LEAD 배정 후 MALE_LEAD description 갱신 실패:", e);
+    }
   }
 
   return NextResponse.json(casting);

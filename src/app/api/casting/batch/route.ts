@@ -6,8 +6,10 @@ import {
   deleteCalendarEvent,
   mirrorCastingToAllCalendar,
   deleteFromAllCalendar,
+  updateEventDescription,
+  updateAllCalendarDescription,
 } from "@/lib/google-calendar";
-import { buildReservationDescription } from "@/lib/schedule";
+import { buildCastingDescription } from "@/lib/schedule";
 
 interface CastingChange {
   performanceDateId: string;
@@ -192,22 +194,32 @@ export async function POST(req: NextRequest) {
     }
 
     // 새 이벤트 생성 (초대 알림)
-    // MALE_LEAD인 경우 공연 당일에만 ReservationStatus 메모 → 캘린더 description
     const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
     const memoMap = new Map(memoUpserts.map((m) => [m.performanceDateId, m]));
-    // memoUpserts에 없는 경우 DB에서 조회 필요 → syncTargets의 당일 MALE_LEAD perfDateId 수집
-    const maleSyncPerfDateIds = syncTargets
-      .filter((st) => {
-        if (st.roleType !== "MALE_LEAD" || memoMap.has(st.performanceDateId)) return false;
-        const pd = perfDateMap.get(st.performanceDateId);
-        return pd && pd.date.toISOString().split("T")[0] === kstToday;
-      })
-      .map((st) => st.performanceDateId);
 
+    // MALE_LEAD syncTargets의 상대역(FEMALE_LEAD) 이름 일괄 조회
+    const maleSyncTargetPerfDateIds = syncTargets
+      .filter((st) => st.roleType === "MALE_LEAD")
+      .map((st) => st.performanceDateId);
+    let partnerNameMap = new Map<string, string>();
+    if (maleSyncTargetPerfDateIds.length > 0) {
+      const femaleCastings = await prisma.casting.findMany({
+        where: { performanceDateId: { in: maleSyncTargetPerfDateIds }, roleType: "FEMALE_LEAD" },
+        include: { actor: { select: { name: true } } },
+      });
+      partnerNameMap = new Map(femaleCastings.map((c) => [c.performanceDateId, c.actor.name]));
+    }
+
+    // 당일 MALE_LEAD의 예약 메모 조회
+    const maleMemoQueryIds = maleSyncTargetPerfDateIds.filter((id) => {
+      if (memoMap.has(id)) return false;
+      const pd = perfDateMap.get(id);
+      return pd && pd.date.toISOString().split("T")[0] === kstToday;
+    });
     let dbMemoMap = new Map<string, { reservationName: string | null; reservationContact: string | null }>();
-    if (maleSyncPerfDateIds.length > 0) {
+    if (maleMemoQueryIds.length > 0) {
       const dbMemos = await prisma.reservationStatus.findMany({
-        where: { performanceDateId: { in: maleSyncPerfDateIds } },
+        where: { performanceDateId: { in: maleMemoQueryIds } },
         select: { performanceDateId: true, reservationName: true, reservationContact: true },
       });
       dbMemoMap = new Map(dbMemos.map((m) => [m.performanceDateId, m]));
@@ -218,18 +230,19 @@ export async function POST(req: NextRequest) {
       const actor = actorMap.get(st.actorId);
       if (!perfDate || !actor) continue;
 
-      // MALE_LEAD description: 공연 당일에만 포함
+      // MALE_LEAD description: 상대역(항상) + 예약메모(당일만)
       let description: string | undefined;
       if (st.roleType === "MALE_LEAD") {
+        const partnerName = partnerNameMap.get(st.performanceDateId);
         const perfDateStr = perfDate.date.toISOString().split("T")[0];
+        let resName: string | null | undefined;
+        let resContact: string | null | undefined;
         if (perfDateStr === kstToday) {
           const localMemo = memoMap.get(st.performanceDateId);
-          const name = localMemo?.name || dbMemoMap.get(st.performanceDateId)?.reservationName;
-          const contact = localMemo?.contact || dbMemoMap.get(st.performanceDateId)?.reservationContact;
-          if (name && contact) {
-            description = buildReservationDescription(name, contact);
-          }
+          resName = localMemo?.name || dbMemoMap.get(st.performanceDateId)?.reservationName;
+          resContact = localMemo?.contact || dbMemoMap.get(st.performanceDateId)?.reservationContact;
         }
+        description = buildCastingDescription({ partnerName, reservationName: resName, reservationContact: resContact });
       }
 
       const dateStr = perfDate.date.toISOString().split("T")[0];
@@ -267,6 +280,47 @@ export async function POST(req: NextRequest) {
           },
           data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
         });
+      }
+    }
+    // FEMALE_LEAD 변경 시 기존 MALE_LEAD의 description 갱신
+    const femaleChangePerfDateIds = changes
+      .filter((c) => c.roleType === "FEMALE_LEAD")
+      .map((c) => c.performanceDateId);
+    const maleSyncSet = new Set(maleSyncTargetPerfDateIds);
+    const maleUpdateIds = femaleChangePerfDateIds.filter((id) => !maleSyncSet.has(id));
+
+    if (maleUpdateIds.length > 0) {
+      const maleCastingsToUpdate = await prisma.casting.findMany({
+        where: { performanceDateId: { in: maleUpdateIds }, roleType: "MALE_LEAD", calendarEventId: { not: null } },
+        include: { actor: { select: { calendarId: true } }, performanceDate: true },
+      });
+      const femaleCastingsForUpdate = await prisma.casting.findMany({
+        where: { performanceDateId: { in: maleUpdateIds }, roleType: "FEMALE_LEAD" },
+        include: { actor: { select: { name: true } } },
+      });
+      const femaleNameMap = new Map(femaleCastingsForUpdate.map((c) => [c.performanceDateId, c.actor.name]));
+
+      for (const mc of maleCastingsToUpdate) {
+        const pName = femaleNameMap.get(mc.performanceDateId);
+        const pds = mc.performanceDate.date.toISOString().split("T")[0];
+        let rn: string | null | undefined;
+        let rc: string | null | undefined;
+        if (pds === kstToday) {
+          const resMemo = await prisma.reservationStatus.findUnique({
+            where: { performanceDateId: mc.performanceDateId },
+            select: { reservationName: true, reservationContact: true },
+          });
+          rn = resMemo?.reservationName;
+          rc = resMemo?.reservationContact;
+        }
+        const desc = buildCastingDescription({ partnerName: pName, reservationName: rn, reservationContact: rc });
+        const calId = mc.actor.calendarId || process.env.CALENDAR_MALE_LEAD;
+        if (calId && mc.calendarEventId) {
+          await updateEventDescription(calId, mc.calendarEventId, desc || null).catch(() => {});
+        }
+        if (mc.allCalendarEventId) {
+          await updateAllCalendarDescription(mc.allCalendarEventId, desc || null).catch(() => {});
+        }
       }
     }
   } catch (e) {

@@ -9,7 +9,7 @@ import {
   mirrorUnavailableToAllCalendar,
   deleteFromAllCalendar,
 } from "@/lib/google-calendar";
-import { buildReservationDescription } from "@/lib/schedule";
+import { buildCastingDescription } from "@/lib/schedule";
 
 // POST /api/calendar/sync - 전체 동기화 (관리자 전용)
 export async function POST() {
@@ -62,14 +62,28 @@ export async function POST() {
     },
   });
 
-  // MALE_LEAD 캐스팅 중 공연 당일인 건만 ReservationStatus 메모 조회
   const kstToday = new Date(new Date().getTime() + 9 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const malePerfDateIds = unsyncedCastings
-    .filter((c) => c.roleType === "MALE_LEAD" && c.performanceDate.date.toISOString().split("T")[0] === kstToday)
+
+  // MALE_LEAD의 상대역(FEMALE_LEAD) 이름 일괄 조회
+  const maleCastingPerfDateIds = unsyncedCastings
+    .filter((c) => c.roleType === "MALE_LEAD")
     .map((c) => c.performanceDateId);
-  const resMemos = malePerfDateIds.length > 0
+  const femaleCastings = maleCastingPerfDateIds.length > 0
+    ? await prisma.casting.findMany({
+        where: { performanceDateId: { in: maleCastingPerfDateIds }, roleType: "FEMALE_LEAD" },
+        include: { actor: { select: { name: true } } },
+      })
+    : [];
+  const partnerNameMap = new Map(femaleCastings.map((c) => [c.performanceDateId, c.actor.name]));
+
+  // 당일 MALE_LEAD의 예약 메모 조회
+  const todayMalePerfDateIds = maleCastingPerfDateIds.filter((id) => {
+    const c = unsyncedCastings.find((uc) => uc.performanceDateId === id && uc.roleType === "MALE_LEAD");
+    return c && c.performanceDate.date.toISOString().split("T")[0] === kstToday;
+  });
+  const resMemos = todayMalePerfDateIds.length > 0
     ? await prisma.reservationStatus.findMany({
-        where: { performanceDateId: { in: malePerfDateIds } },
+        where: { performanceDateId: { in: todayMalePerfDateIds } },
         select: { performanceDateId: true, reservationName: true, reservationContact: true },
       })
     : [];
@@ -93,13 +107,18 @@ export async function POST() {
       await deleteFromAllCalendar(casting.allCalendarEventId).catch(() => {});
     }
 
-    // MALE_LEAD인 경우 공연 당일에만 description 포함
+    // MALE_LEAD: 상대역(항상) + 예약메모(당일만)
     let description: string | undefined;
-    if (casting.roleType === "MALE_LEAD" && dateStr === kstToday) {
-      const memo = resMemoMap.get(casting.performanceDateId);
-      if (memo?.reservationName && memo?.reservationContact) {
-        description = buildReservationDescription(memo.reservationName, memo.reservationContact);
+    if (casting.roleType === "MALE_LEAD") {
+      const partnerName = partnerNameMap.get(casting.performanceDateId);
+      let resName: string | null | undefined;
+      let resContact: string | null | undefined;
+      if (dateStr === kstToday) {
+        const memo = resMemoMap.get(casting.performanceDateId);
+        resName = memo?.reservationName;
+        resContact = memo?.reservationContact;
       }
+      description = buildCastingDescription({ partnerName, reservationName: resName, reservationContact: resContact });
     }
 
     const eventId = await createCastingEvent(
