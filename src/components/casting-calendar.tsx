@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, AlertTriangle } from "lucide-react";
 
 interface Performance {
   id: string;
@@ -320,7 +320,8 @@ export function CastingCalendar() {
       const maleAvailable = !male ? getAvailableActors(p.id, "MALE_LEAD").length > 0 : true;
       const femaleAvailable = !female ? getAvailableActors(p.id, "FEMALE_LEAD").length > 0 : true;
       const hasReservation = hasReservationData ? data.reservations![p.id] : undefined;
-      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation };
+      const cancellationConflict = hasReservation === false && (!!male || !!female);
+      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation, cancellationConflict };
     });
 
     // 요약: 배정된 슬롯 수
@@ -330,6 +331,11 @@ export function CastingCalendar() {
     // 예약 있지만 미배정인 회차 수
     const needsCastingCount = hasReservationData
       ? slots.filter((s) => s.hasReservation === true && (!s.male || !s.female)).length
+      : 0;
+
+    // 예약 취소되었지만 배정이 남아있는 회차 수
+    const cancellationConflictCount = hasReservationData
+      ? slots.filter((s) => s.cancellationConflict).length
       : 0;
 
     return (
@@ -342,11 +348,12 @@ export function CastingCalendar() {
           return (
             <div key={i} className={cn(
               "flex items-center gap-0.5 leading-tight",
-              noReservation && "opacity-30"
+              s.cancellationConflict ? "bg-orange-50 rounded px-0.5 -mx-0.5" : noReservation && "opacity-30"
             )}>
               <span className="text-[10px] text-gray-400 w-3 shrink-0 flex items-center">
                 {i + 1}
                 {needsCasting && <span className="text-amber-500 ml-px">●</span>}
+                {s.cancellationConflict && <span className="text-orange-500 ml-px">⚠</span>}
               </span>
               <span className={cn(
                 "truncate",
@@ -374,6 +381,11 @@ export function CastingCalendar() {
           {needsCastingCount > 0 && (
             <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-400 text-amber-600">
               배정필요 {needsCastingCount}
+            </Badge>
+          )}
+          {cancellationConflictCount > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 border-orange-400 text-orange-700 bg-orange-50">
+              예약취소 {cancellationConflictCount}
             </Badge>
           )}
         </div>
@@ -434,11 +446,14 @@ export function CastingCalendar() {
                 const hasReservationData = data.reservations && Object.keys(data.reservations).length > 0;
                 const reservationState = hasReservationData ? data.reservations![perf.id] : undefined;
                 const noReservation = reservationState === false;
+                const maleCasting = data.castings[`${perf.id}_MALE_LEAD`];
+                const femaleCasting = data.castings[`${perf.id}_FEMALE_LEAD`];
+                const cancellationConflict = noReservation && (!!maleCasting || !!femaleCasting);
 
                 return (
                   <div key={perf.id} className={cn(
                     "rounded-lg border p-3 space-y-2",
-                    noReservation && "bg-gray-50 border-dashed"
+                    cancellationConflict ? "bg-orange-50 border-orange-300 border-2" : noReservation && "bg-gray-50 border-dashed"
                   )}>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">
@@ -448,7 +463,15 @@ export function CastingCalendar() {
                         reservationState === true
                           ? <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-700 border-green-300" variant="outline">예약</Badge>
                           : reservationState === false
-                            ? <Badge className="text-[10px] px-1.5 py-0 bg-red-50 text-red-500 border-red-200" variant="outline">예약 없음</Badge>
+                            ? cancellationConflict
+                              ? <>
+                                  <Badge className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 border-orange-400" variant="outline">
+                                    <AlertTriangle className="h-3 w-3 mr-0.5" />
+                                    예약 취소
+                                  </Badge>
+                                  <span className="text-[10px] text-orange-600">배정 해제를 검토하세요</span>
+                                </>
+                              : <Badge className="text-[10px] px-1.5 py-0 bg-red-50 text-red-500 border-red-200" variant="outline">예약 없음</Badge>
                             : <Badge className="text-[10px] px-1.5 py-0 bg-gray-50 text-gray-400 border-gray-200" variant="outline">미확인</Badge>
                       )}
                     </div>
@@ -472,9 +495,9 @@ export function CastingCalendar() {
                               onValueChange={(v) =>
                                 setDialogCastings((prev) => ({ ...prev, [key]: v }))
                               }
-                              disabled={noReservation}
+                              disabled={noReservation && !cancellationConflict}
                             >
-                              <SelectTrigger className={cn("flex-1 h-8 text-xs", noReservation && "opacity-50")}>
+                              <SelectTrigger className={cn("flex-1 h-8 text-xs", noReservation && !cancellationConflict && "opacity-50")}>
                                 <SelectValue placeholder="미배정" />
                               </SelectTrigger>
                               <SelectContent>
@@ -507,7 +530,7 @@ export function CastingCalendar() {
                                   }))
                                 }
                                 className="h-7 text-xs flex-1"
-                                disabled={noReservation}
+                                disabled={noReservation && !cancellationConflict}
                               />
                               <Input
                                 placeholder="연락처"
@@ -522,7 +545,7 @@ export function CastingCalendar() {
                                   }))
                                 }
                                 className="h-7 text-xs flex-1"
-                                disabled={noReservation}
+                                disabled={noReservation && !cancellationConflict}
                               />
                             </div>
                           )}
