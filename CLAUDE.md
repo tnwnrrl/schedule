@@ -129,7 +129,7 @@ user: { id: string; role: "ADMIN" | "ACTOR"; actorId: string | null }
 | `/api/login` | POST | 공개 | 비밀번호 검증 → JWT 쿠키 설정 |
 | `/api/schedule?year=&month=` | GET | Auth | 월별 통합 데이터 (performances, castings, unavailable, actors). 해당 월 PerformanceDate 없으면 SHOW_TIMES 기준 자동 생성 |
 | `/api/unavailable?actorId=` | GET | Auth | 불가일정 조회 |
-| `/api/unavailable` | POST | 본인/ADMIN | performanceDateIds 배열 → 기존 대비 diff 트랜잭션 |
+| `/api/unavailable` | POST | 본인/ADMIN | performanceDateIds 배열 → 기존 대비 diff 트랜잭션. **불가일정 추가 시 해당 회차의 기존 캐스팅 자동 삭제 (캘린더 이벤트 포함)** |
 | `/api/casting` | POST | ADMIN | 단건 배정. 배우 roleType + 불가일정 검증 후 upsert. 검증 쿼리 3개 `Promise.all` 병렬 |
 | `/api/casting/batch` | POST | ADMIN | 일괄 배정 (reservationName/reservationContact 메모 포함). 필요 데이터 한번에 조회 → Map 검증 → 단일 트랜잭션 |
 | `/api/casting/reservations` | POST | API Key | 예약자 메모 자동 등록. n8n → 크롤러 → 이 API. Bearer 토큰 인증 |

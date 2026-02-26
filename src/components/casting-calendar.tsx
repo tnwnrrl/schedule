@@ -297,6 +297,13 @@ export function CastingCalendar() {
     return new Set(data?.overriddenActors || []);
   }, [data?.overriddenActors]);
 
+  // 배정된 배우가 불가일정인지 확인
+  const isActorUnavailableForPerf = (actorId: string | undefined, perfId: string): boolean => {
+    if (!actorId || !data) return false;
+    const unavailIds = data.unavailable[actorId] || [];
+    return unavailIds.includes(perfId);
+  };
+
   // 특정 회차에 불가일정인 배우 필터 (override 반영)
   const getAvailableActors = (perfId: string, roleType: string): Actor[] => {
     if (!data) return [];
@@ -324,7 +331,10 @@ export function CastingCalendar() {
       const femaleAvailable = !female ? getAvailableActors(p.id, "FEMALE_LEAD").length > 0 : true;
       const hasReservation = hasReservationData ? data.reservations![p.id] : undefined;
       const cancellationConflict = !isPast && hasReservation === false && (!!male || !!female);
-      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation, cancellationConflict, isPast };
+      const maleUnavailConflict = male ? isActorUnavailableForPerf(male.actorId, p.id) : false;
+      const femaleUnavailConflict = female ? isActorUnavailableForPerf(female.actorId, p.id) : false;
+      const unavailConflict = maleUnavailConflict || femaleUnavailConflict;
+      return { perfId: p.id, startTime: p.startTime, male, female, maleAvailable, femaleAvailable, hasReservation, cancellationConflict, isPast, maleUnavailConflict, femaleUnavailConflict, unavailConflict };
     });
 
     // 요약: 배정된 슬롯 수
@@ -341,6 +351,9 @@ export function CastingCalendar() {
       ? slots.filter((s) => s.cancellationConflict).length
       : 0;
 
+    // 배정된 배우가 불가일정인 회차 수
+    const unavailConflictCount = slots.filter((s) => s.unavailConflict).length;
+
     return (
       <div className="space-y-0.5">
         {slots.map((s, i) => {
@@ -351,23 +364,24 @@ export function CastingCalendar() {
           return (
             <div key={i} className={cn(
               "flex items-center gap-0.5 leading-tight",
-              s.cancellationConflict ? "bg-orange-50 rounded px-0.5 -mx-0.5" : noReservation && !isPast && "opacity-30"
+              s.unavailConflict ? "bg-red-50 rounded px-0.5 -mx-0.5" : s.cancellationConflict ? "bg-orange-50 rounded px-0.5 -mx-0.5" : noReservation && !isPast && "opacity-30"
             )}>
               <span className="text-[10px] text-gray-400 w-3 shrink-0 flex items-center">
                 {i + 1}
                 {needsCasting && <span className="text-amber-500 ml-px">●</span>}
-                {s.cancellationConflict && <span className="text-orange-500 ml-px">⚠</span>}
+                {s.unavailConflict && <span className="text-red-500 ml-px">⚠</span>}
+                {!s.unavailConflict && s.cancellationConflict && <span className="text-orange-500 ml-px">⚠</span>}
               </span>
               <span className={cn(
                 "truncate",
-                mName ? "text-blue-700" : !s.maleAvailable ? "text-red-500 font-medium" : "text-gray-300"
+                s.maleUnavailConflict ? "text-red-500 line-through" : mName ? "text-blue-700" : !s.maleAvailable ? "text-red-500 font-medium" : "text-gray-300"
               )}>
                 {mName || (!s.maleAvailable ? "불가" : "─")}
               </span>
               <span className="text-gray-300">/</span>
               <span className={cn(
                 "truncate",
-                fName ? "text-pink-700" : !s.femaleAvailable ? "text-red-500 font-medium" : "text-gray-300"
+                s.femaleUnavailConflict ? "text-red-500 line-through" : fName ? "text-pink-700" : !s.femaleAvailable ? "text-red-500 font-medium" : "text-gray-300"
               )}>
                 {fName || (!s.femaleAvailable ? "불가" : "─")}
               </span>
@@ -384,6 +398,11 @@ export function CastingCalendar() {
           {needsCastingCount > 0 && (
             <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-400 text-amber-600">
               배정필요 {needsCastingCount}
+            </Badge>
+          )}
+          {unavailConflictCount > 0 && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 border-red-400 text-red-700 bg-red-50">
+              불가충돌 {unavailConflictCount}
             </Badge>
           )}
           {cancellationConflictCount > 0 && (
@@ -488,9 +507,17 @@ export function CastingCalendar() {
                       const key = `${perf.id}_${roleType}`;
                       const available = getAvailableActors(perf.id, roleType);
                       const currentValue = dialogCastings[key] || "";
+                      const currentCasting = data.castings[`${perf.id}_${roleType}`];
+                      const isUnavailConflict = currentCasting && isActorUnavailableForPerf(currentCasting.actorId, perf.id);
 
                       return (
                         <div key={roleType} className="space-y-1">
+                          {isUnavailConflict && (
+                            <div className="ml-10 flex items-center gap-1 text-[10px] text-red-600 bg-red-50 rounded px-2 py-0.5">
+                              <AlertTriangle className="h-3 w-3 shrink-0" />
+                              <span>{currentCasting.actorName}이(가) 불가일정을 등록했습니다. 배정 변경이 필요합니다.</span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "w-8 text-xs font-medium",
@@ -503,15 +530,23 @@ export function CastingCalendar() {
                               onValueChange={(v) =>
                                 setDialogCastings((prev) => ({ ...prev, [key]: v }))
                               }
-                              disabled={noReservation && !cancellationConflict}
+                              disabled={noReservation && !cancellationConflict && !isUnavailConflict}
                             >
-                              <SelectTrigger className={cn("flex-1 h-8 text-xs", noReservation && !cancellationConflict && "opacity-50")}>
+                              <SelectTrigger className={cn(
+                                "flex-1 h-8 text-xs",
+                                isUnavailConflict ? "border-red-400 bg-red-50" : noReservation && !cancellationConflict && "opacity-50"
+                              )}>
                                 <SelectValue placeholder="미배정" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__none__">
                                   <span className="text-gray-400">미배정</span>
                                 </SelectItem>
+                                {isUnavailConflict && currentCasting && (
+                                  <SelectItem value={currentCasting.actorId} disabled>
+                                    <span className="text-red-500 line-through">{currentCasting.actorName} (불가)</span>
+                                  </SelectItem>
+                                )}
                                 {available.map((actor) => (
                                   <SelectItem key={actor.id} value={actor.id}>
                                     {actor.name}
