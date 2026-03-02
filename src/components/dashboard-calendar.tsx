@@ -147,11 +147,9 @@ export function DashboardCalendar() {
     today.setHours(0, 0, 0, 0);
 
     const totalPerfs = allPerfs.length;
-    const reservedPerfs = allPerfs.filter((p) => p.hasReservation);
-    const reservedCount = reservedPerfs.length;
 
-    // 매출 계산: 과거=배정 기준, 미래=예약 기준
-    const revenuePerfs = allPerfs.filter((p) => {
+    // 예약현황 & 매출: 과거=배정 기준, 미래=예약 기준
+    const reservedPerfs = allPerfs.filter((p) => {
       const perfDate = new Date(p.dateStr);
       perfDate.setHours(0, 0, 0, 0);
       if (perfDate < today) {
@@ -159,13 +157,14 @@ export function DashboardCalendar() {
       }
       return p.hasReservation;
     });
-    const weekdayRevenue = revenuePerfs.filter((p) => !p.isWeekend).length;
-    const weekendRevenue = revenuePerfs.filter((p) => p.isWeekend).length;
+    const reservedCount = reservedPerfs.length;
+
+    const weekdayRevenue = reservedPerfs.filter((p) => !p.isWeekend).length;
+    const weekendRevenue = reservedPerfs.filter((p) => p.isWeekend).length;
     const totalRevenue =
       weekdayRevenue * PERFORMANCE_PRICES.weekday +
       weekendRevenue * PERFORMANCE_PRICES.weekend;
 
-    // 예약현황 (예약 기준)
     const weekdayReserved = reservedPerfs.filter((p) => !p.isWeekend).length;
     const weekendReserved = reservedPerfs.filter((p) => p.isWeekend).length;
 
