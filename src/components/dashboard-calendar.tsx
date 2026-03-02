@@ -212,11 +212,23 @@ export function DashboardCalendar() {
     };
   }, [allPerfs, data]);
 
+  // 과거=배정 기준, 미래=예약 기준 판별 헬퍼
+  const isCountedPerf = useCallback((p: PerfMeta) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const perfDate = new Date(p.dateStr);
+    perfDate.setHours(0, 0, 0, 0);
+    if (perfDate < today) {
+      return p.hasMale || p.hasFemale;
+    }
+    return p.hasReservation;
+  }, []);
+
   // 날짜별 첫 예약회차 (초번 계산용)
   const firstReservedByDate = useMemo(() => {
     const byDate = new Map<string, PerfMeta[]>();
     for (const p of allPerfs) {
-      if (!p.hasReservation) continue;
+      if (!isCountedPerf(p)) continue;
       const arr = byDate.get(p.dateStr) || [];
       arr.push(p);
       byDate.set(p.dateStr, arr);
@@ -227,7 +239,7 @@ export function DashboardCalendar() {
       result.set(dateStr, perfs[0]);
     }
     return result;
-  }, [allPerfs]);
+  }, [allPerfs, isCountedPerf]);
 
   // 배우별 예약공연 통계
   const actorStats = useMemo(() => {
@@ -245,7 +257,7 @@ export function DashboardCalendar() {
     for (const actor of data.actors) {
       const roleKey = actor.roleType === "MALE_LEAD" ? "maleActorId" : "femaleActorId";
       const reserved = allPerfs.filter(
-        (p) => p.hasReservation && p[roleKey] === actor.id
+        (p) => isCountedPerf(p) && p[roleKey] === actor.id
       );
       const weekday = reserved.filter((p) => !p.isWeekend).length;
       const weekend = reserved.filter((p) => p.isWeekend).length;
@@ -274,7 +286,7 @@ export function DashboardCalendar() {
     }
 
     return result;
-  }, [data, allPerfs, firstReservedByDate]);
+  }, [data, allPerfs, firstReservedByDate, isCountedPerf]);
 
   // 특정 회차에 가용한 배우 수 (override 반영)
   const getAvailableCount = (perfId: string, roleType: string): number => {
