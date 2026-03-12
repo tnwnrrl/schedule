@@ -310,3 +310,19 @@ export async function syncAllToCalendar() {
   // 구현은 calendar/sync route에서 처리
   return { success: true };
 }
+
+// 캘린더 이벤트 안전 조회 (404 → found:false, 기타 에러 → error 반환)
+export async function getCalendarEventSafe(
+  calendarId: string,
+  eventId: string
+): Promise<{ found: boolean; event: Record<string, unknown> | null; error: string | null }> {
+  try {
+    const calendar = getCalendar();
+    const res = await calendar.events.get({ calendarId, eventId });
+    return { found: true, event: res.data as Record<string, unknown>, error: null };
+  } catch (error: unknown) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 404) return { found: false, event: null, error: null };
+    return { found: false, event: null, error: String(error) };
+  }
+}
