@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
+  createUnavailableEvent,
+  mirrorUnavailableToAllCalendar,
   deleteCalendarEvent,
   deleteFromAllCalendar,
   updateEventDescription,
@@ -57,6 +59,12 @@ export async function POST(req: NextRequest) {
   if (session.user.role !== "ADMIN" && session.user.actorId !== actorId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // 배우 정보 조회 (calendarId 포함)
+  const actor = await prisma.actor.findUnique({
+    where: { id: actorId },
+    select: { name: true, calendarId: true },
+  });
 
   // 현재 불가일정 조회
   const existing = await prisma.unavailableDate.findMany({
@@ -115,6 +123,32 @@ export async function POST(req: NextRequest) {
       })
     ),
   ]);
+
+  // 새로 추가된 불가일정 캘린더 즉시 동기화
+  if (toAdd.length > 0 && actor?.calendarId) {
+    const addedRecords = await prisma.unavailableDate.findMany({
+      where: { actorId, performanceDateId: { in: toAdd } },
+      include: { performanceDate: { select: { date: true } } },
+    });
+    for (const item of addedRecords) {
+      try {
+        const dateStr = item.performanceDate.date.toISOString().split("T")[0];
+        const eventId = await createUnavailableEvent(actor.calendarId!, actor.name, dateStr);
+        if (eventId) {
+          let allEventId: string | null = null;
+          try {
+            allEventId = await mirrorUnavailableToAllCalendar(actor.name, dateStr);
+          } catch {}
+          await prisma.unavailableDate.update({
+            where: { id: item.id },
+            data: { synced: true, calendarEventId: eventId, allCalendarEventId: allEventId },
+          });
+        }
+      } catch (e) {
+        console.error("불가일정 캘린더 자동 동기화 실패:", e);
+      }
+    }
+  }
 
   // 충돌 캐스팅의 캘린더 이벤트 삭제 (트랜잭션 이후 비동기)
   for (const c of conflictCastings) {
