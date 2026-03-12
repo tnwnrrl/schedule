@@ -32,7 +32,7 @@ import { ROLE_TYPE_LABEL } from "@/types";
 import type { RoleType } from "@/types";
 import { SHOW_TIME_LABELS } from "@/lib/constants";
 import type { ShowTime } from "@/lib/constants";
-import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight, Calendar, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ActorData {
@@ -81,6 +81,7 @@ export function ActorManager({
   const [unavailableRaw, setUnavailableRaw] = useState<Record<string, string[]>>({});
   const [detailActor, setDetailActor] = useState<ActorData | null>(null);
   const [calendarSetup, setCalendarSetup] = useState(false);
+  const [syncingActorId, setSyncingActorId] = useState<string | null>(null);
 
   const fetchMonthlyData = useCallback(async (y: number, m: number) => {
     setMonthlyLoading(true);
@@ -242,6 +243,30 @@ export function ActorManager({
         );
       }
     });
+  };
+
+  const handleSyncUnavailable = async (actor: ActorData) => {
+    if (!actor.calendarId) {
+      toast.error("캘린더가 연결되지 않은 배우입니다");
+      return;
+    }
+    setSyncingActorId(actor.id);
+    try {
+      const res = await fetch(`/api/actors/${actor.id}/sync-unavailable`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "동기화 실패");
+      if (data.total === 0) {
+        toast.success(`${actor.name}: 동기화할 불가일정이 없습니다`);
+      } else if (data.failed > 0) {
+        toast.warning(`${actor.name}: ${data.synced}건 성공, ${data.failed}건 실패`);
+      } else {
+        toast.success(`${actor.name}: 불가일정 ${data.synced}건 동기화 완료`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "동기화 실패");
+    } finally {
+      setSyncingActorId(null);
+    }
   };
 
   const handleCalendarSetup = async () => {
@@ -436,6 +461,15 @@ export function ActorManager({
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleSyncUnavailable(actor)}
+                        disabled={syncingActorId === actor.id || !actor.calendarId}
+                        title={actor.calendarId ? "불가일정 캘린더 동기화" : "캘린더 미연결"}
+                      >
+                        <RefreshCw className={`h-4 w-4 text-blue-500 ${syncingActorId === actor.id ? "animate-spin" : ""}`} />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
