@@ -46,7 +46,6 @@ export function DashboardCalendar() {
   const [data, setData] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [overriddenSet, setOverriddenSet] = useState<Set<string>>(new Set());
-  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const fetchData = useCallback(async (y: number, m: number) => {
     setLoading(true);
@@ -74,35 +73,6 @@ export function DashboardCalendar() {
   const handleMonthChange = (y: number, m: number) => {
     setYear(y);
     setMonth(m);
-  };
-
-  const handleToggleOverride = async (actorId: string) => {
-    setTogglingId(actorId);
-    try {
-      const res = await fetch("/api/actor-override", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actorId, year, month }),
-      });
-      if (!res.ok) {
-        toast.error("오버라이드 변경 실패");
-        return;
-      }
-      const { overridden } = await res.json();
-      setOverriddenSet((prev) => {
-        const next = new Set(prev);
-        if (overridden) {
-          next.add(actorId);
-        } else {
-          next.delete(actorId);
-        }
-        return next;
-      });
-    } catch {
-      toast.error("오버라이드 변경 실패");
-    } finally {
-      setTogglingId(null);
-    }
   };
 
   // 역할별 배우 목록 (사전 분류)
@@ -525,41 +495,6 @@ export function DashboardCalendar() {
           <CardTitle className="text-sm font-medium text-gray-600">배정 현황</CardTitle>
         </CardHeader>
         <CardContent className="px-4">
-          {/* 배우 오버라이드 칩 패널 */}
-          {data && data.overriddenActors !== undefined && (
-            <div className="rounded-lg border p-3 space-y-2 mb-4">
-              <div className="text-xs font-medium text-gray-500">배우 전체불가 설정 (클릭하여 토글)</div>
-              <div className="flex flex-wrap gap-1.5">
-                {(["MALE_LEAD", "FEMALE_LEAD"] as const).map((roleType) => {
-                  const actors = actorsByRole[roleType];
-                  if (!Array.isArray(actors)) return null;
-                  return actors.map((actor) => {
-                    const isOverridden = overriddenSet.has(actor.id);
-                    const isToggling = togglingId === actor.id;
-                    return (
-                      <button
-                        key={actor.id}
-                        onClick={() => handleToggleOverride(actor.id)}
-                        disabled={isToggling}
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
-                          "border cursor-pointer disabled:opacity-50",
-                          isOverridden
-                            ? "bg-gray-100 text-gray-400 line-through border-gray-200"
-                            : roleType === "MALE_LEAD"
-                              ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-                              : "bg-pink-50 text-pink-700 border-pink-200 hover:bg-pink-100"
-                        )}
-                      >
-                        {actor.name}
-                      </button>
-                    );
-                  });
-                })}
-              </div>
-            </div>
-          )}
-
           <ScheduleCalendar
             year={year}
             month={month}

@@ -32,7 +32,7 @@ import { ROLE_TYPE_LABEL } from "@/types";
 import type { RoleType } from "@/types";
 import { SHOW_TIME_LABELS } from "@/lib/constants";
 import type { ShowTime } from "@/lib/constants";
-import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight, Calendar, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Link as LinkIcon, ChevronLeft, ChevronRight, Calendar, RefreshCw, Ban } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ActorData {
@@ -82,6 +82,8 @@ export function ActorManager({
   const [detailActor, setDetailActor] = useState<ActorData | null>(null);
   const [calendarSetup, setCalendarSetup] = useState(false);
   const [syncingActorId, setSyncingActorId] = useState<string | null>(null);
+  const [overriddenActors, setOverriddenActors] = useState<Set<string>>(new Set());
+  const [overrideLoading, setOverrideLoading] = useState<string | null>(null);
 
   const fetchMonthlyData = useCallback(async (y: number, m: number) => {
     setMonthlyLoading(true);
@@ -92,6 +94,8 @@ export function ActorManager({
       const performances: Record<string, Array<{ id: string; startTime: string }>> = data.performances || {};
       const unavail: Record<string, string[]> = data.unavailable || {};
       const castings: Record<string, { actorId: string }> = data.castings || {};
+      const overridden: string[] = data.overriddenActors || [];
+      setOverriddenActors(new Set(overridden));
 
       // performanceDateId → { date, startTime } 역매핑
       const idMap: Record<string, { date: string; startTime: string }> = {};
@@ -269,6 +273,33 @@ export function ActorManager({
     }
   };
 
+  const handleToggleOverride = async (actor: ActorData) => {
+    const isOverridden = overriddenActors.has(actor.id);
+    const action = isOverridden ? "활성화" : "비활성화";
+    if (!confirm(`${actor.name}을(를) ${filterYear}년 ${filterMonth}월에 ${action}하시겠습니까?`)) return;
+    setOverrideLoading(actor.id);
+    try {
+      const res = await fetch("/api/actor-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorId: actor.id, year: filterYear, month: filterMonth }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "실패");
+      setOverriddenActors((prev) => {
+        const next = new Set(prev);
+        if (data.overridden) next.add(actor.id);
+        else next.delete(actor.id);
+        return next;
+      });
+      toast.success(`${actor.name}: ${filterMonth}월 배정 ${data.overridden ? "제외" : "포함"}됨`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "오류가 발생했습니다");
+    } finally {
+      setOverrideLoading(null);
+    }
+  };
+
   const handleCalendarSetup = async () => {
     if (!confirm("모든 배우의 개인 캘린더를 생성하고 공유하시겠습니까?")) return;
     setCalendarSetup(true);
@@ -406,6 +437,9 @@ export function ActorManager({
                 <TableHead className="text-center">
                   불가 ({filterMonth}월)
                 </TableHead>
+                <TableHead className="text-center">
+                  {filterMonth}월 배정제외
+                </TableHead>
                 <TableHead className="w-[120px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -459,6 +493,21 @@ export function ActorManager({
                       </button>
                     )}
                   </TableCell>
+                  <TableCell className="text-center">
+                    <Button
+                      variant={overriddenActors.has(actor.id) ? "destructive" : "ghost"}
+                      size="sm"
+                      onClick={() => handleToggleOverride(actor)}
+                      disabled={overrideLoading === actor.id || monthlyLoading}
+                      title={overriddenActors.has(actor.id) ? `${filterMonth}월 배정 제외 중 (클릭하여 해제)` : `${filterMonth}월 배정에서 제외`}
+                      className="h-7 px-2"
+                    >
+                      <Ban className="h-3.5 w-3.5" />
+                      <span className="ml-1 text-xs">
+                        {overriddenActors.has(actor.id) ? "제외중" : "제외"}
+                      </span>
+                    </Button>
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Button
@@ -491,7 +540,7 @@ export function ActorManager({
               {group.actors.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="text-center text-gray-500"
                   >
                     등록된 배우가 없습니다
