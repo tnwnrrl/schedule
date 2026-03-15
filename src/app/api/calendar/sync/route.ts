@@ -33,14 +33,16 @@ export async function POST() {
     const eventId = await createUnavailableEvent(
       item.actor.calendarId,
       item.actor.name,
-      dateStr
+      dateStr,
+      item.performanceDate.startTime,
+      item.performanceDate.endTime
     );
 
     if (eventId) {
       // 전체배우일정 캘린더에도 미러링
       let allEventId: string | null = null;
       try {
-        allEventId = await mirrorUnavailableToAllCalendar(item.actor.name, dateStr);
+        allEventId = await mirrorUnavailableToAllCalendar(item.actor.name, dateStr, item.performanceDate.startTime, item.performanceDate.endTime);
       } catch {}
 
       await prisma.unavailableDate.update({

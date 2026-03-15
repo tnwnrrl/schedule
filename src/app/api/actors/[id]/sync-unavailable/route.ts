@@ -36,12 +36,12 @@ export async function POST(
 
   for (const item of unsynced) {
     const dateStr = item.performanceDate.date.toISOString().split("T")[0];
-    const eventId = await createUnavailableEvent(actor.calendarId!, actor.name, dateStr);
+    const eventId = await createUnavailableEvent(actor.calendarId!, actor.name, dateStr, item.performanceDate.startTime, item.performanceDate.endTime);
 
     if (eventId) {
       let allEventId: string | null = null;
       try {
-        allEventId = await mirrorUnavailableToAllCalendar(actor.name, dateStr);
+        allEventId = await mirrorUnavailableToAllCalendar(actor.name, dateStr, item.performanceDate.startTime, item.performanceDate.endTime);
       } catch {}
 
       await prisma.unavailableDate.update({

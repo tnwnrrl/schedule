@@ -33,19 +33,30 @@ function getCalendar() {
 export async function createUnavailableEvent(
   calendarId: string,
   actorName: string,
-  date: string
+  date: string,
+  startTime?: string | null,
+  endTime?: string | null
 ): Promise<string | null> {
   try {
     const calendar = getCalendar();
-    const res = await calendar.events.insert({
-      calendarId,
-      requestBody: {
-        summary: `[불가] ${actorName}`,
-        start: { date },
-        end: { date },
-        colorId: "11", // 빨간색
-      },
-    });
+    const requestBody: Record<string, unknown> = {
+      summary: `[불가] ${actorName}`,
+      colorId: "11", // 빨간색
+    };
+
+    if (startTime) {
+      const startDateTime = `${date}T${startTime}:00`;
+      const endDateTime = endTime
+        ? `${date}T${endTime}:00`
+        : `${date}T${addHours(startTime, 2)}:00`;
+      requestBody.start = { dateTime: startDateTime, timeZone: "Asia/Seoul" };
+      requestBody.end = { dateTime: endDateTime, timeZone: "Asia/Seoul" };
+    } else {
+      requestBody.start = { date };
+      requestBody.end = { date };
+    }
+
+    const res = await calendar.events.insert({ calendarId, requestBody });
     return res.data.id || null;
   } catch (error) {
     console.error("캘린더 이벤트 생성 실패:", error);
@@ -260,13 +271,15 @@ export async function mirrorCastingToAllCalendar(
 // 불가일정 이벤트를 전체배우일정 캘린더에도 생성
 export async function mirrorUnavailableToAllCalendar(
   actorName: string,
-  date: string
+  date: string,
+  startTime?: string | null,
+  endTime?: string | null
 ): Promise<string | null> {
   const calendarId = process.env.CALENDAR_ALL_ACTORS;
   if (!calendarId) return null;
 
   try {
-    return await createUnavailableEvent(calendarId, actorName, date);
+    return await createUnavailableEvent(calendarId, actorName, date, startTime, endTime);
   } catch (error) {
     console.error("전체배우일정 불가일정 이벤트 생성 실패:", error);
     return null;

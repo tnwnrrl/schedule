@@ -128,16 +128,16 @@ export async function POST(req: NextRequest) {
   if (toAdd.length > 0 && actor?.calendarId) {
     const addedRecords = await prisma.unavailableDate.findMany({
       where: { actorId, performanceDateId: { in: toAdd } },
-      include: { performanceDate: { select: { date: true } } },
+      include: { performanceDate: { select: { date: true, startTime: true, endTime: true } } },
     });
     for (const item of addedRecords) {
       try {
         const dateStr = item.performanceDate.date.toISOString().split("T")[0];
-        const eventId = await createUnavailableEvent(actor.calendarId!, actor.name, dateStr);
+        const eventId = await createUnavailableEvent(actor.calendarId!, actor.name, dateStr, item.performanceDate.startTime, item.performanceDate.endTime);
         if (eventId) {
           let allEventId: string | null = null;
           try {
-            allEventId = await mirrorUnavailableToAllCalendar(actor.name, dateStr);
+            allEventId = await mirrorUnavailableToAllCalendar(actor.name, dateStr, item.performanceDate.startTime, item.performanceDate.endTime);
           } catch {}
           await prisma.unavailableDate.update({
             where: { id: item.id },
