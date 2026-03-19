@@ -281,14 +281,23 @@ export function DashboardCalendar() {
     const total = perfs.length * 2;
 
     const slots = perfs.map((p, i) => {
-      const hasMale = !!data.castings[`${p.id}_MALE_LEAD`];
-      const hasFemale = !!data.castings[`${p.id}_FEMALE_LEAD`];
+      const maleCasting = data.castings[`${p.id}_MALE_LEAD`];
+      const femaleCasting = data.castings[`${p.id}_FEMALE_LEAD`];
+      const hasMale = !!maleCasting;
+      const hasFemale = !!femaleCasting;
       if (hasMale) filled++;
       if (hasFemale) filled++;
       const maleAvail = getAvailableCount(p.id, "MALE_LEAD");
       const femaleAvail = getAvailableCount(p.id, "FEMALE_LEAD");
       const hasReservation = hasReservationData ? data.reservations![p.id] : undefined;
-      return { index: i + 1, hasMale, hasFemale, maleAvail, femaleAvail, hasReservation };
+      return {
+        index: i + 1,
+        hasMale, hasFemale,
+        maleActorName: maleCasting?.actorName ?? null,
+        femaleActorName: femaleCasting?.actorName ?? null,
+        maleAvail, femaleAvail,
+        hasReservation,
+      };
     });
 
     // 예약 있지만 미배정인 회차 수 (과거 날짜는 제외)
@@ -312,17 +321,25 @@ export function DashboardCalendar() {
             )}>
               <span className="text-gray-400 w-2.5 shrink-0">{s.index}</span>
               <span className={cn(
-                "w-3 text-center",
-                s.maleAvail === 0 ? "text-red-500 font-bold" : s.hasMale ? "text-blue-600" : "text-blue-400"
+                "truncate",
+                s.hasMale
+                  ? "text-blue-600 max-w-[36px]"
+                  : s.maleAvail === 0
+                    ? "text-red-500 font-bold w-5"
+                    : "text-blue-400 w-3 text-center"
               )}>
-                {s.maleAvail}
+                {s.hasMale ? s.maleActorName : s.maleAvail === 0 ? "불가" : s.maleAvail}
               </span>
               <span className="text-gray-300">/</span>
               <span className={cn(
-                "w-3 text-center",
-                s.femaleAvail === 0 ? "text-red-500 font-bold" : s.hasFemale ? "text-pink-600" : "text-pink-400"
+                "truncate",
+                s.hasFemale
+                  ? "text-pink-600 max-w-[36px]"
+                  : s.femaleAvail === 0
+                    ? "text-red-500 font-bold w-5"
+                    : "text-pink-400 w-3 text-center"
               )}>
-                {s.femaleAvail}
+                {s.hasFemale ? s.femaleActorName : s.femaleAvail === 0 ? "불가" : s.femaleAvail}
               </span>
             </div>
           );
