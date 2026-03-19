@@ -8,3 +8,8 @@ export const SHOW_TIME_LABELS: Record<ShowTime, string> = {
   "17:30": "4회 17:30",
   "19:45": "5회 19:45",
 };
+
+export const PERFORMANCE_PRICES = {
+  weekday: 200000,
+  weekend: 240000,
+} as const;
