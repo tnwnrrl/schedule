@@ -13,3 +13,11 @@ export const PERFORMANCE_PRICES = {
   weekday: 200000,
   weekend: 240000,
 } as const;
+
+export const MINIMUM_WAGE: Record<number, number> = {
+  2024: 9860,
+  2025: 10030,
+  2026: 10030,
+};
+
+export const EXTRA_SHOW_RATE = 15000;

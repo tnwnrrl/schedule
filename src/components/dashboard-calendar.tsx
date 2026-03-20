@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { PERFORMANCE_PRICES } from "@/lib/constants";
+import { PERFORMANCE_PRICES, MINIMUM_WAGE, EXTRA_SHOW_RATE } from "@/lib/constants";
 import { CalendarCheck, Banknote, AlertTriangle, Users } from "lucide-react";
 
 interface ScheduleData {
@@ -25,6 +25,14 @@ interface ScheduleData {
   overriddenActors?: string[];
   reservations?: Record<string, boolean>;
   reservationCheckedAt?: string | null;
+}
+
+interface OvertimeEntry {
+  id: string;
+  actorId: string;
+  date: string;
+  type: string;
+  hours: number;
 }
 
 interface PerfMeta {
@@ -46,11 +54,15 @@ export function DashboardCalendar() {
   const [data, setData] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(true);
   const [overriddenSet, setOverriddenSet] = useState<Set<string>>(new Set());
+  const [overtimeEntries, setOvertimeEntries] = useState<OvertimeEntry[]>([]);
 
   const fetchData = useCallback(async (y: number, m: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/schedule?year=${y}&month=${m}`);
+      const [res, overtimeRes] = await Promise.all([
+        fetch(`/api/schedule?year=${y}&month=${m}`),
+        fetch(`/api/actors/overtime?year=${y}&month=${m}`),
+      ]);
       if (!res.ok) {
         toast.error("스케줄을 불러오는데 실패했습니다");
         return;
@@ -58,6 +70,10 @@ export function DashboardCalendar() {
       const json: ScheduleData = await res.json();
       setData(json);
       setOverriddenSet(new Set(json.overriddenActors || []));
+      if (overtimeRes.ok) {
+        const entries: OvertimeEntry[] = await overtimeRes.json();
+        setOvertimeEntries(entries);
+      }
     } catch (e) {
       console.error("Schedule fetch error:", e);
       toast.error("스케줄을 불러오는데 실패했습니다");
@@ -222,7 +238,12 @@ export function DashboardCalendar() {
       weekend: number;
       firstShift: number;
       pay: number;
+      overtimeHours: number;
+      overtimePay: number;
+      totalPay: number;
     }> = [];
+
+    const wage = MINIMUM_WAGE[year] ?? 10030;
 
     for (const actor of data.actors) {
       const roleKey = actor.roleType === "MALE_LEAD" ? "maleActorId" : "femaleActorId";
@@ -244,6 +265,13 @@ export function DashboardCalendar() {
       // 예상 출연료: 회차 × 3만원 + 초번 × 3천원
       const pay = totalShows * 30000 + firstShift * 3000;
 
+      // 추가근무 계산
+      const actorOvertime = overtimeEntries.filter((e) => e.actorId === actor.id);
+      const educationHours = actorOvertime.filter((e) => e.type === "EDUCATION").reduce((s, e) => s + e.hours, 0);
+      const extraShowHours = actorOvertime.filter((e) => e.type === "EXTRA_SHOW").reduce((s, e) => s + e.hours, 0);
+      const overtimeHours = educationHours + extraShowHours;
+      const overtimePay = Math.round(educationHours * wage) + extraShowHours * EXTRA_SHOW_RATE;
+
       result.push({
         id: actor.id,
         name: actor.name,
@@ -252,11 +280,14 @@ export function DashboardCalendar() {
         weekend,
         firstShift,
         pay,
+        overtimeHours,
+        overtimePay,
+        totalPay: pay + overtimePay,
       });
     }
 
     return result;
-  }, [data, allPerfs, firstReservedByDate, isCountedPerf]);
+  }, [data, allPerfs, firstReservedByDate, isCountedPerf, overtimeEntries, year]);
 
   // 특정 회차에 가용한 배우 수 (override 반영)
   const getAvailableCount = (perfId: string, roleType: string): number => {
@@ -434,7 +465,7 @@ export function DashboardCalendar() {
           <div>
             <CardTitle className="text-sm font-medium text-gray-600">배우별 예약공연</CardTitle>
             <p className="text-xs text-gray-500 mt-1">
-              출연료 합계 <span className="font-medium text-gray-700">{((actorStats.reduce((sum, a) => sum + a.pay, 0)) / 10000).toLocaleString()}만원</span>
+              총 합계 <span className="font-medium text-gray-700">{((actorStats.reduce((sum, a) => sum + a.totalPay, 0)) / 10000).toLocaleString()}만원</span>
             </p>
           </div>
           <Users className="h-4 w-4 text-gray-400" />
@@ -451,6 +482,7 @@ export function DashboardCalendar() {
                     <TableHead className="text-xs h-8 text-right">초번</TableHead>
                     <TableHead className="text-xs h-8 text-right">평일</TableHead>
                     <TableHead className="text-xs h-8 text-right">주말</TableHead>
+                    <TableHead className="text-xs h-8 text-right">추가(h)</TableHead>
                     <TableHead className="text-xs h-8 text-right">출연료</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -461,12 +493,16 @@ export function DashboardCalendar() {
                       <TableCell className="text-xs py-1.5 text-right">{a.firstShift}</TableCell>
                       <TableCell className="text-xs py-1.5 text-right">{a.weekday}</TableCell>
                       <TableCell className="text-xs py-1.5 text-right">{a.weekend}</TableCell>
-                      <TableCell className="text-xs py-1.5 text-right font-medium">{(a.pay / 10000).toLocaleString()}만</TableCell>
+                      <TableCell className="text-xs py-1.5 text-right text-purple-600">{a.overtimeHours > 0 ? a.overtimeHours : "—"}</TableCell>
+                      <TableCell className="text-xs py-1.5 text-right font-medium">
+                        {(a.totalPay / 10000).toLocaleString()}만
+                        {a.overtimePay > 0 && <span className="text-purple-500 ml-0.5">+{(a.overtimePay / 10000).toLocaleString()}</span>}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {maleActorStats.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-xs py-1.5 text-center text-gray-400">배우 없음</TableCell>
+                      <TableCell colSpan={6} className="text-xs py-1.5 text-center text-gray-400">배우 없음</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -482,6 +518,7 @@ export function DashboardCalendar() {
                     <TableHead className="text-xs h-8">이름</TableHead>
                     <TableHead className="text-xs h-8 text-right">평일</TableHead>
                     <TableHead className="text-xs h-8 text-right">주말</TableHead>
+                    <TableHead className="text-xs h-8 text-right">추가(h)</TableHead>
                     <TableHead className="text-xs h-8 text-right">출연료</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -491,12 +528,16 @@ export function DashboardCalendar() {
                       <TableCell className="text-xs py-1.5">{a.name}</TableCell>
                       <TableCell className="text-xs py-1.5 text-right">{a.weekday}</TableCell>
                       <TableCell className="text-xs py-1.5 text-right">{a.weekend}</TableCell>
-                      <TableCell className="text-xs py-1.5 text-right font-medium">{(a.pay / 10000).toLocaleString()}만</TableCell>
+                      <TableCell className="text-xs py-1.5 text-right text-purple-600">{a.overtimeHours > 0 ? a.overtimeHours : "—"}</TableCell>
+                      <TableCell className="text-xs py-1.5 text-right font-medium">
+                        {(a.totalPay / 10000).toLocaleString()}만
+                        {a.overtimePay > 0 && <span className="text-purple-500 ml-0.5">+{(a.overtimePay / 10000).toLocaleString()}</span>}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {femaleActorStats.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-xs py-1.5 text-center text-gray-400">배우 없음</TableCell>
+                      <TableCell colSpan={5} className="text-xs py-1.5 text-center text-gray-400">배우 없음</TableCell>
                     </TableRow>
                   )}
                 </TableBody>

@@ -65,6 +65,7 @@ model Actor {
   unavailableDates UnavailableDate[]
   castings         Casting[]
   monthOverrides   ActorMonthOverride[]
+  overtimeEntries  ActorOvertimeEntry[]
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 }
@@ -137,4 +138,17 @@ model ActorMonthOverride {
 
   @@unique([actorId, year, month])
   @@index([year, month])
+}
+
+model ActorOvertimeEntry {
+  id        String   @id @default(cuid())
+  actorId   String
+  date      String   // YYYY-MM-DD
+  type      String   // "EDUCATION" | "EXTRA_SHOW"
+  hours     Float
+  actor     Actor    @relation(fields: [actorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([actorId, date, type])
 }
